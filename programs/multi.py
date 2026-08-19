@@ -40,6 +40,7 @@ effects = (
         max_delay_ms=200,
         delay_ms=200,
         decay=0.5,
+        filter=Biquad(FilterMode.LOW_PASS, 6000),
         **pedal.audiosample_args,
     )
 )

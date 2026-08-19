@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: GPLv3
 
 from audiodelays import Echo
-from audiofilters import Filter
 import synthio
 import time
 
@@ -32,7 +31,7 @@ delay_lfo = synthio.LFO(
     scale=0.0,
 )
 
-delay_effect = Echo(
+effect = Echo(
     max_delay_ms=TAPE_LENGTH,
     delay_ms=synthio.Math(
         synthio.MathOperation.SCALE_OFFSET,
@@ -41,13 +40,7 @@ delay_effect = Echo(
         TAPE_LENGTH
     ),
     freq_shift=True,
-
-    buffer_size=BUFFER_SIZE,
-    **pedal.audiosample_args,
-)
-
-filter_effect = Filter(
-    filter=synthio.Biquad(synthio.FilterMode.LOW_PASS, FILTER_FREQ),
+    filter=synthio.Biquad(synthio.FilterMode.LOW_PASS, 20000 if pedal.left_switch.value else FILTER_FREQ),
 
     buffer_size=BUFFER_SIZE,
     **pedal.audiosample_args,
@@ -55,10 +48,8 @@ filter_effect = Filter(
 
 # Audio Chain
 pedal.play(
-    filter_effect.play(
-        delay_effect.play(
-            pedal.audio_in
-        )
+    effect.play(
+        pedal.audio_in
     )
 )
 
@@ -70,13 +61,14 @@ while True:
     programs.update(pedal)
 
     now = time.monotonic()
-    if now - timestamp >= delay_effect.delay_ms.value / 1000:
+    if now - timestamp >= effect.delay_ms.value / 1000:
         timestamp = now
         led_state = not led_state
 
     pedal.led = led_state and not pedal.bypass
 
-    filter_effect.mix = 1.0 * (not pedal.left_switch.value) * (not pedal.bypass)
+    if pedal.left_switch.rose or pedal.left_switch.fell:
+        effect.filter.frequency = 20000 if pedal.left_switch.value else FILTER_FREQ
     delay_lfo.scale = LFO_SCALE * (not pedal.right_switch.value)
 
     if pedal.right_button.released:
@@ -91,6 +83,6 @@ while True:
     pots = pedal.pots
     pedal.mix = pots[0]
     if pedal.usb_connected:
-        delay_effect.mix = pots[0] * (not pedal.bypass)
-    delay_effect.decay = 1.0 if infinite else pots[1]
-    delay_effect.delay_ms.b = delay_effect.delay_ms.c = pots[2] * (MAX_DELAY - MIN_DELAY) + MIN_DELAY
+        effect.mix = pots[0] * (not pedal.bypass)
+    effect.decay = 1.0 if infinite else pots[1]
+    effect.delay_ms.b = effect.delay_ms.c = pots[2] * (MAX_DELAY - MIN_DELAY) + MIN_DELAY
