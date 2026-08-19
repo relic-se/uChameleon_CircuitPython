@@ -6,7 +6,7 @@ from audiodelays import Chorus
 from audiofilters import Filter
 from synthio import LFO, Biquad, FilterMode
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -24,8 +24,7 @@ FILTER_FREQ = 4000  # hz
 BUFFER_SIZE = 1024  # bytes
 
 # Initialize Hardware
-pedal = BlinkaPedal()
-pedal.update()
+pedal = uChameleon()
 
 # Audio Objects
 lfo = LFO(

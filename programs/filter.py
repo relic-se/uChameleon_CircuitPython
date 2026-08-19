@@ -5,7 +5,7 @@
 from audiofilters import Filter
 import synthio
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -26,7 +26,7 @@ MAX_POLES   = 2
 BUFFER_SIZE = 2048  # bytes
 
 # Initialize Hardware
-pedal = BlinkaPedal()
+pedal = uChameleon()
 
 # Audio Objects
 lfo = synthio.LFO(

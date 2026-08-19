@@ -12,14 +12,14 @@ import usb_midi
 # Rename device
 supervisor.set_usb_identification(
     manufacturer="relic-se",
-    product="Blinka Pedal",
+    product="μChameleon",
 )
 
 # Rename drive
 storage.disable_usb_drive()
 storage.remount("/", readonly=True)
 mnt = storage.getmount("/")
-mnt.label = "BLINKAPEDAL"
+mnt.label = "uChameleon"
 
 # Disable unused usb features
 usb_hid.disable()
@@ -28,10 +28,10 @@ usb_cdc.enable(console=True, data=False)
 # Setup MIDI
 usb_midi.enable()
 usb_midi.set_names(
-    streaming_interface_name="Blinka Pedal MIDI",
-    audio_control_interface_name="Blinka Pedal Audio",
-    in_jack_name="Blinka Pedal",
-    out_jack_name="Blinka Pedal",
+    streaming_interface_name="μChameleon MIDI",
+    audio_control_interface_name="μChameleon Audio",
+    in_jack_name="μChameleon",
+    out_jack_name="μChameleon",
 )
 
 # Setup Audio

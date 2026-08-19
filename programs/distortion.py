@@ -5,7 +5,7 @@
 from audiofilters import Distortion, Filter, DistortionMode
 import synthio
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -22,7 +22,7 @@ MODES = (
 )
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=1.0,
 )
 

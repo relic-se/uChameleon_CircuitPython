@@ -6,14 +6,14 @@ from audiodelays import Echo
 from audiofilters import Distortion, DistortionMode, Phaser, Filter
 from synthio import LFO, Biquad, FilterMode
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
 STAGES = 6
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=1.0,
 )
 

@@ -6,7 +6,7 @@ import microcontroller
 import os
 import supervisor
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 
 KEY = "PROGRAM"
 DIR = "/programs"
@@ -79,7 +79,7 @@ def load_next(save: bool = True) -> None:
 
 _left_long_press = False
 _right_long_press = False
-def update(device: BlinkaPedal) -> None:
+def update(device: uChameleon) -> None:
     global _left_long_press, _right_long_press
     
     if device.left_button.long_press:

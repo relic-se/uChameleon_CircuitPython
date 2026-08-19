@@ -5,7 +5,7 @@
 from audiofilters import Phaser
 import synthio
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -22,7 +22,7 @@ MIN_FEEDBACK     = 0.5
 MAX_FEEDBACK     = 1.0
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=1.0,
 )
 pedal.update()

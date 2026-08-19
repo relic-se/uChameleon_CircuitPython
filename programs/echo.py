@@ -7,7 +7,7 @@ from audiofilters import Filter
 import synthio
 import time
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -24,7 +24,7 @@ FILTER_FREQ    = 4000  # hz
 BUFFER_SIZE    = 2048  # bytes
 
 # Initialize Hardware
-pedal = BlinkaPedal()
+pedal = uChameleon()
 
 # Audio Objects
 delay_lfo = synthio.LFO(

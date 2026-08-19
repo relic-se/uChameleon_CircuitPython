@@ -4,11 +4,11 @@
 
 from audiodelays import PitchShift
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Initialize Hardware
-pedal = BlinkaPedal()
+pedal = uChameleon()
 
 # Audio Object
 effect = PitchShift(

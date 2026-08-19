@@ -6,17 +6,17 @@ from audiofreeverb import Freeverb
 from audiofilters import Filter
 from synthio import Biquad, FilterMode
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
 LPF_FILTER_FREQ = 4000  # hz
-HPF_FILTER_FREQ = 800  # hz
+HPF_FILTER_FREQ = 1000  # hz
 
 BUFFER_SIZE     = 2048  # bytes
 
 # Initialize Hardware
-pedal = BlinkaPedal()
+pedal = uChameleon()
 
 # Audio Objects
 reverb_effect = Freeverb(

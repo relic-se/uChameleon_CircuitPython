@@ -40,7 +40,7 @@ _PIN_DIN = board.GP7
 
 _PIN_BYPASS = board.GP8
 
-class BlinkaPedal:
+class uChameleon:
 
     def __init__(
         self,
