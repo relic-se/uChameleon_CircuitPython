@@ -21,7 +21,10 @@ MAX_VOICES  = 4
 
 FILTER_FREQ = 4000  # hz
 
-BUFFER_SIZE = 1024  # bytes
+
+# Overclock
+import microcontroller
+microcontroller.cpu.frequency = 300_000_000
 
 # Initialize Hardware
 pedal = uChameleon()

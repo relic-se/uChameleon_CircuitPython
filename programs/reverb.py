@@ -14,6 +14,10 @@ HPF_FILTER_FREQ = 1000  # hz
 
 BUFFER_SIZE     = 2048  # bytes
 
+# Overclock
+import microcontroller
+microcontroller.cpu.frequency = 300_000_000
+
 # Initialize Hardware
 pedal = uChameleon()
 
