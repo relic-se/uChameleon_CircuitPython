@@ -79,7 +79,7 @@ while True:
             tap_count += 1
             tap_pot_lock = pots[0]
             lfo.rate = tap_count / (now - tap_start_timestamp)
-    elif pedal.left_button.long_pressed:
+    elif pedal.left_button.long_press:
         tap_start_timestamp = None
 
     if pedal.right_button.pressed:

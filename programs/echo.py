@@ -91,7 +91,7 @@ while True:
             tap_count += 1
             tap_pot_lock = pots[2]
             effect.delay_ms.b = effect.delay_ms.c = (now - tap_start_timestamp) / tap_count * 1000
-    elif pedal.left_button.long_pressed:
+    elif pedal.left_button.long_press:
         tap_start_timestamp = None
         infinite = True
     elif pedal.left_button.released:
