@@ -56,9 +56,14 @@ pedal.play(
 led_state = True
 infinite = False
 timestamp = time.monotonic()
+tap_start_timestamp = None
+tap_last_timestamp = None
+tap_count = 0
+tap_pot_lock = None
 while True:
     pedal.update()
     programs.update(pedal)
+    pots = pedal.pots
 
     now = time.monotonic()
     if now - timestamp >= effect.delay_ms.value / 1000:
@@ -74,15 +79,27 @@ while True:
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
 
-    # TODO: left button tap tempo?
     if pedal.left_button.pressed:
+        if tap_start_timestamp is None or now - tap_last_timestamp > MAX_DELAY / 1000:
+            tap_start_timestamp = tap_last_timestamp = now
+            tap_count = 0
+        else:
+            tap_last_timestamp = now
+            tap_count += 1
+            tap_pot_lock = pots[2]
+            effect.delay_ms.b = effect.delay_ms.c = (now - tap_start_timestamp) / tap_count * 1000
+    elif pedal.left_button.long_pressed:
+        tap_start_timestamp = None
         infinite = True
     elif pedal.left_button.released:
         infinite = False
 
-    pots = pedal.pots
     pedal.mix = pots[0]
     if pedal.usb_connected:
         effect.mix = pots[0] * (not pedal.bypass)
     effect.decay = 1.0 if infinite else pots[1]
-    effect.delay_ms.b = effect.delay_ms.c = pots[2] * (MAX_DELAY - MIN_DELAY) + MIN_DELAY
+
+    if tap_pot_lock is not None and abs(tap_pot_lock - pots[2]) >= 0.05:
+        tap_pot_lock = None
+    if tap_pot_lock is None:
+        effect.delay_ms.b = effect.delay_ms.c = pots[2] * (MAX_DELAY - MIN_DELAY) + MIN_DELAY
