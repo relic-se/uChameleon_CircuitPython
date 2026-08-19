@@ -34,6 +34,8 @@ delay_lfo = synthio.LFO(
     scale=LFO_SCALE * (not pedal.right_switch.value),
 )
 
+lpf = synthio.Biquad(synthio.FilterMode.LOW_PASS, FILTER_FREQ)
+
 effect = Echo(
     max_delay_ms=TAPE_LENGTH,
     delay_ms=synthio.Math(
@@ -43,7 +45,7 @@ effect = Echo(
         TAPE_LENGTH
     ),
     freq_shift=True,
-    filter=synthio.Biquad(synthio.FilterMode.LOW_PASS, 20000 if pedal.left_switch.value else FILTER_FREQ),
+    filter=None if pedal.left_switch.value else lpf,
 
     buffer_size=BUFFER_SIZE,
     **pedal.audiosample_args,
@@ -76,8 +78,9 @@ while True:
     pedal.led = led_state and not pedal.bypass
 
     if pedal.left_switch.rose or pedal.left_switch.fell:
-        effect.filter.frequency = 20000 if pedal.left_switch.value else FILTER_FREQ
-    delay_lfo.scale = LFO_SCALE * (not pedal.right_switch.value)
+        effect.filter = None if pedal.left_switch.value else lpf
+    if pedal.right_switch.rose or pedal.right_switch.fell:
+        delay_lfo.scale = LFO_SCALE * (not pedal.right_switch.value)
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
