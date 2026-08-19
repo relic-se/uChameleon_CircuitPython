@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPLv3
 
+import digitalio
+import microcontroller
 import storage
 import supervisor
 import usb_audio
@@ -9,15 +11,34 @@ import usb_cdc
 import usb_hid
 import usb_midi
 
+from uchameleon import _PIN_BTN0, _PIN_BTN1
+
+# Initialize button inputs
+pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
+pin_btn0.switch_to_input(pull=digitalio.Pull.UP)
+
+pin_btn1 = digitalio.DigitalInOut(_PIN_BTN1)
+pin_btn1.switch_to_input(pull=digitalio.Pull.UP)
+
+# Reset to bootloader mode if right button is pressed
+if not pin_btn1.value:
+    microcontroller.on_next_reset(microcontroller.RunMode.UF2)
+    microcontroller.reset()
+
 # Rename device
 supervisor.set_usb_identification(
     manufacturer="relic-se",
     product="μChameleon",
 )
 
-# Rename drive
-storage.disable_usb_drive()
-storage.remount("/", readonly=True)
+# Mount and rename drive, allow USB file access if left button is pressed
+if pin_btn0.value:
+    storage.disable_usb_drive()
+storage.remount(
+    "/",
+    readonly=pin_btn0.value,
+    disable_concurrent_write_protection=not pin_btn0.value,
+)
 mnt = storage.getmount("/")
 mnt.label = "uChameleon"
 

@@ -21,9 +21,9 @@ def _save(value: str) -> None:
         pass
     else:
         try:
-            storage.remount("/", False)
+            storage.remount("/", readonly=False)
             cptoml.put(KEY, value)
-            storage.remount("/", True)
+            storage.remount("/", readonly=True)
         except RuntimeError:
             pass
 
