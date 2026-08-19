@@ -176,7 +176,7 @@ class uChameleon:
             return
         self._needs_update = False
 
-        self._pin_bypass.value = self._bypass
+        self._pin_bypass.value = not self._bypass
 
         dac_muted = self._bypass or self._mix <= 0.01 or self._level <= 0.01
         dac_volume = -63.5 * (1.0 - min(self._mix * 2.0, 1.0) * self._level)
