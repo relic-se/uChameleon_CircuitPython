@@ -10,15 +10,14 @@ from uchameleon import uChameleon
 import programs
 
 # Constants
-TAPE_LENGTH    = 100   # ms
+MAX_DELAY      = 1000  # ms (int)
+MIN_DELAY      = MAX_DELAY / 8  # ms
+TAPE_LENGTH    = MAX_DELAY  # ms
 
-MIN_DELAY      = 10    # ms
-MAX_DELAY      = 1000  # ms
-
-LFO_SPEED      = 0.5   # s
+LFO_SPEED      = 0.5  # s
 LFO_SCALE      = 0.05
 
-FILTER_FREQ    = 4000  # hz
+FILTER_FREQ    = 2000  # hz
 
 BUFFER_SIZE    = 2048  # bytes
 
@@ -32,7 +31,7 @@ pedal = uChameleon()
 # Audio Objects
 delay_lfo = synthio.LFO(
     rate=LFO_SPEED,
-    scale=0.0,
+    scale=LFO_SCALE * (not pedal.right_switch.value),
 )
 
 effect = Echo(

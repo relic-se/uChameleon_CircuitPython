@@ -10,8 +10,8 @@ from uchameleon import uChameleon
 import programs
 
 # Constants
-MIN_DELAY   = 5  # ms
-MAX_DELAY   = 50  # ms
+MIN_DELAY   = 4  # ms
+MAX_DELAY   = 40  # ms
 
 MIN_SPEED   = 0.05  # hz
 MAX_SPEED   = 4.0  # hz
@@ -21,6 +21,7 @@ MAX_VOICES  = 4
 
 FILTER_FREQ = 4000  # hz
 
+BUFFER_SIZE = 2048  # bytes
 
 # Overclock
 import microcontroller
@@ -36,7 +37,7 @@ lfo = LFO(
 )
 
 chorus_effect = Chorus(
-    max_delay_ms=MAX_DELAY * 2,
+    max_delay_ms=MAX_DELAY,
     delay_ms=lfo,
     voices=(MIN_VOICES if pedal.right_switch.value else MAX_VOICES),
 

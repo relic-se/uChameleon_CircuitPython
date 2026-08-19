@@ -12,6 +12,10 @@ pedal = uChameleon()
 
 # Audio Object
 effect = PitchShift(
+    window=2048,
+    overlap=512,
+    buffer_size=2048,
+    
     **pedal.audiosample_args,
 )
 

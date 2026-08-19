@@ -12,7 +12,7 @@ import programs
 MIN_Q       = 0.7
 MAX_Q       = 8.0
 
-MIN_FILTER  = 80  # hz
+MIN_FILTER  = 120  # hz
 MAX_FILTER  = 4000  # hz
 
 MIN_SPEED   = 0.2  # hz

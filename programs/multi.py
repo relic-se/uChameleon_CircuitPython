@@ -28,7 +28,7 @@ effects = (
         mode=DistortionMode.WAVESHAPE,
         drive=0.9,
         pre_gain=12.0,
-        post_gain=-22.0,
+        post_gain=-18.0,
         **pedal.audiosample_args,
     ),
     filter_effect := Filter(
