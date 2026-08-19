@@ -14,6 +14,8 @@ MAX_FILTER = 12000
 
 BOOST_GAIN = 24
 
+OVERDRIVE_GAIN = 24
+
 MODES = (
     DistortionMode.CLIP,
     DistortionMode.OVERDRIVE,
@@ -61,14 +63,19 @@ while True:
 
     pedal.led = (not pedal.bypass) / (1 + (not boost) * 3)
 
-    pots = pedal.pots
-    filter_effect.filter.frequency = pots[0] * (MAX_FILTER - MIN_FILTER) + MIN_FILTER
-    pedal.level = pots[1]
-    distortion_effect.drive = pots[2]
-
     mode_index = int(not pedal.left_switch.value) | (int(not pedal.right_switch.value) << 1)
     distortion_effect.mode = MODES[mode_index]
 
+    pots = pedal.pots
+    filter_effect.filter.frequency = pots[0] * (MAX_FILTER - MIN_FILTER) + MIN_FILTER
+    pedal.level = pots[1]
+
     if pedal.left_button.pressed:
         boost = not boost
+    
+    if distortion_effect.mode == DistortionMode.OVERDRIVE:
+        distortion_effect.pre_gain = BOOST_GAIN * boost + OVERDRIVE_GAIN * pots[2]
+        distortion_effect.drive = 0.0
+    else:
         distortion_effect.pre_gain = BOOST_GAIN * boost
+        distortion_effect.drive = pots[2]
