@@ -163,6 +163,8 @@ class uChameleon:
         # True Bypass
         self._pin_bypass = digitalio.DigitalInOut(_PIN_BYPASS)
         self._pin_bypass.switch_to_output()
+        if self.usb_connected:
+            self._pin_bypass.value = True  # Always on if using USB audio
 
         # Control Parameters
         self._bypass = bypass
@@ -179,8 +181,6 @@ class uChameleon:
         if not self._needs_update:
             return
         self._needs_update = False
-
-        self._pin_bypass.value = not self._bypass
 
         dac_muted = self._bypass or self._mix <= 0.01 or self._level <= 0.01
         dac_volume = -63.5 * (1.0 - min(self._mix * 2.0, 1.0) * self._level)
@@ -207,6 +207,7 @@ class uChameleon:
                 if not self._bypass and self._sample is not None:
                     self._usb_mixer.play(self._sample)
         else:
+            self._pin_bypass.value = not self._bypass
             self._bypass_changed = False
 
     @property
