@@ -6,12 +6,12 @@ from audiodelays import Chorus
 from audiofilters import Filter
 from synthio import LFO, Biquad, FilterMode
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
-MIN_DELAY   = 5  # ms
-MAX_DELAY   = 50  # ms
+MIN_DELAY   = 4  # ms
+MAX_DELAY   = 40  # ms
 
 MIN_SPEED   = 0.05  # hz
 MAX_SPEED   = 4.0  # hz
@@ -21,11 +21,14 @@ MAX_VOICES  = 4
 
 FILTER_FREQ = 4000  # hz
 
-BUFFER_SIZE = 1024  # bytes
+BUFFER_SIZE = 2048  # bytes
+
+# Overclock
+import microcontroller
+microcontroller.cpu.frequency = 300_000_000
 
 # Initialize Hardware
-pedal = BlinkaPedal()
-pedal.update()
+pedal = uChameleon()
 
 # Audio Objects
 lfo = LFO(
@@ -34,7 +37,7 @@ lfo = LFO(
 )
 
 chorus_effect = Chorus(
-    max_delay_ms=MAX_DELAY * 2,
+    max_delay_ms=MAX_DELAY,
     delay_ms=lfo,
     voices=(MIN_VOICES if pedal.right_switch.value else MAX_VOICES),
 

@@ -40,7 +40,7 @@ _PIN_DIN = board.GP7
 
 _PIN_BYPASS = board.GP8
 
-class BlinkaPedal:
+class uChameleon:
 
     def __init__(
         self,
@@ -167,6 +167,9 @@ class BlinkaPedal:
         self._level = level
         self._needs_update = True
         self._update_codec()
+
+        # Prepare initial state
+        self.update()
 
     def _update_codec(self) -> None:
         if not self._needs_update:

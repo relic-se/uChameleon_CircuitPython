@@ -2,14 +2,13 @@
 #
 # SPDX-License-Identifier: GPLv3
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=1.0,
     level=1.0,
 )
-pedal.update()
 pedal.codec.adc_loopback = not pedal.left_switch.value
 
 # Audio Chain

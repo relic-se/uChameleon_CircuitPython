@@ -6,21 +6,21 @@ from audiodelays import Echo
 from audiofilters import Distortion, DistortionMode, Phaser, Filter
 from synthio import LFO, Biquad, FilterMode
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
 STAGES = 6
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=1.0,
 )
 
 # Audio Objects
 effects = (
     phaser_effect := Phaser(
-        stages=STAGES,
+        stages=STAGES * (1 + int(not pedal.left_switch.value)),
         frequency=LFO(offset=1000, scale=600, rate=0.5),
         **pedal.audiosample_args,
     ),
@@ -28,18 +28,19 @@ effects = (
         mode=DistortionMode.WAVESHAPE,
         drive=0.9,
         pre_gain=12.0,
-        post_gain=-22.0,
+        post_gain=-18.0,
         **pedal.audiosample_args,
     ),
     filter_effect := Filter(
         filter=Biquad(FilterMode.LOW_PASS, 4000),
-        mix=0.0,
+        mix=not pedal.right_switch.value,
         **pedal.audiosample_args,
     ),
     echo_effect := Echo(
         max_delay_ms=200,
         delay_ms=200,
         decay=0.5,
+        filter=Biquad(FilterMode.LOW_PASS, 6000),
         **pedal.audiosample_args,
     )
 )

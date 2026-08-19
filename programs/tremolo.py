@@ -6,7 +6,7 @@ from audiomixer import Mixer
 import synthio
 import ulab.numpy as np
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -40,7 +40,7 @@ waveforms = (
 waveform = -1
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=0.0,
 )
 

@@ -4,7 +4,7 @@
 
 from audiodelays import Flanger
 
-from blinka_pedal import BlinkaPedal
+from uchameleon import uChameleon
 import programs
 
 # Constants
@@ -18,10 +18,9 @@ MIN_FEEDBACK = 0.25
 MAX_FEEDBACK = 0.75
 
 # Initialize Hardware
-pedal = BlinkaPedal(
+pedal = uChameleon(
     mix=1.0,
 )
-pedal.update()
 
 # Audio Objects
 effect = Flanger(
