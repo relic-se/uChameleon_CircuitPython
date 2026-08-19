@@ -21,7 +21,6 @@ MAX_FEEDBACK = 0.75
 pedal = uChameleon(
     mix=1.0,
 )
-pedal.update()
 
 # Audio Objects
 effect = Flanger(

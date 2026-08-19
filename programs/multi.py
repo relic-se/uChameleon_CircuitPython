@@ -20,7 +20,7 @@ pedal = uChameleon(
 # Audio Objects
 effects = (
     phaser_effect := Phaser(
-        stages=STAGES,
+        stages=STAGES * (1 + int(not pedal.left_switch.value)),
         frequency=LFO(offset=1000, scale=600, rate=0.5),
         **pedal.audiosample_args,
     ),
@@ -33,7 +33,7 @@ effects = (
     ),
     filter_effect := Filter(
         filter=Biquad(FilterMode.LOW_PASS, 4000),
-        mix=0.0,
+        mix=not pedal.right_switch.value,
         **pedal.audiosample_args,
     ),
     echo_effect := Echo(

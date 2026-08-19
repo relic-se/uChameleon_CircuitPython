@@ -168,6 +168,9 @@ class uChameleon:
         self._needs_update = True
         self._update_codec()
 
+        # Prepare initial state
+        self.update()
+
     def _update_codec(self) -> None:
         if not self._needs_update:
             return

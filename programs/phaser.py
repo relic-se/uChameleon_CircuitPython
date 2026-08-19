@@ -25,7 +25,6 @@ MAX_FEEDBACK     = 1.0
 pedal = uChameleon(
     mix=1.0,
 )
-pedal.update()
 
 # Audio Objects
 lfo = synthio.LFO(
