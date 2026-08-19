@@ -64,7 +64,11 @@ mixer = Mixer(
 mixer.voice[0].level = lfo
 
 # Audio Chain
-pedal.play(mixer)
+pedal.play(
+    mixer.play(
+        pedal.audio_in
+    )
+)
 
 # Assign controls
 def set_waveform(index: int):
@@ -97,6 +101,3 @@ while True:
 
     if pedal.right_button.pressed:
         pedal.bypass = not pedal.bypass
-        if not pedal.bypass:
-            pedal.update()  # reconstruct audio pathway
-            mixer.play(pedal.audio_in)
