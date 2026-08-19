@@ -31,7 +31,7 @@ supervisor.set_usb_identification(
     product="μChameleon",
 )
 
-# Mount and rename drive, allow USB file access if left button is pressed
+# Mount drive, allow USB file access if left button is pressed
 if pin_btn0.value:
     storage.disable_usb_drive()
 storage.remount(
@@ -39,8 +39,6 @@ storage.remount(
     readonly=pin_btn0.value,
     disable_concurrent_write_protection=not pin_btn0.value,
 )
-mnt = storage.getmount("/")
-mnt.label = "uChameleon"
 
 # Disable unused usb features
 usb_hid.disable()
