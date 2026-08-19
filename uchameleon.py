@@ -207,6 +207,8 @@ class uChameleon:
 
     @property
     def usb_connected(self) -> bool:
+        if not supervisor.get_setting("USB_AUDIO", True):
+            return False
         if hasattr(self, "_usb_mixer") and self._usb_mixer is None:
             return False
         return supervisor.runtime.usb_connected and usb_microphone is not None

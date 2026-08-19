@@ -56,9 +56,10 @@ usb_midi.set_names(
 )
 
 # Setup Audio
-usb_audio.enable(
-    sample_rate=int(supervisor.get_setting("SAMPLE_RATE", 44100)),
-    channel_count=1 if supervisor.get_setting("MONO", True) else 2,
-    microphone=True,
-    speaker=False,
-)
+if supervisor.get_setting("USB_AUDIO", True):
+    usb_audio.enable(
+        sample_rate=int(supervisor.get_setting("SAMPLE_RATE", 44100)),
+        channel_count=1 if supervisor.get_setting("MONO", True) else 2,
+        microphone=True,
+        speaker=False,
+    )
