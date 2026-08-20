@@ -31,7 +31,7 @@ supervisor.set_usb_identification(
     product="μChameleon",
 )
 
-# Mount and rename drive, allow USB file access if left button is pressed
+# Mount drive, allow USB file access if left button is pressed
 if pin_btn0.value:
     storage.disable_usb_drive()
 storage.remount(
@@ -39,8 +39,6 @@ storage.remount(
     readonly=pin_btn0.value,
     disable_concurrent_write_protection=not pin_btn0.value,
 )
-mnt = storage.getmount("/")
-mnt.label = "uChameleon"
 
 # Disable unused usb features
 usb_hid.disable()
@@ -56,9 +54,10 @@ usb_midi.set_names(
 )
 
 # Setup Audio
-usb_audio.enable(
-    sample_rate=int(supervisor.get_setting("SAMPLE_RATE", 44100)),
-    channel_count=1 if supervisor.get_setting("MONO", True) else 2,
-    microphone=True,
-    speaker=False,
-)
+if supervisor.get_setting("USB_AUDIO", True):
+    usb_audio.enable(
+        sample_rate=int(supervisor.get_setting("SAMPLE_RATE", 44100)),
+        channel_count=1 if supervisor.get_setting("MONO", True) else 2,
+        microphone=True,
+        speaker=False,
+    )

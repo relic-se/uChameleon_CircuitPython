@@ -47,6 +47,7 @@ class uChameleon:
         sample_rate: int|None = None,
         mono: bool|None = None,
         input_gain: float|None = None,
+        output_gain: float|None = None,
         mix: float = 0.0,
         level: float = 1.0,
         bypass: bool = True,
@@ -119,8 +120,8 @@ class uChameleon:
             self._sample = None
 
         # Connect IN1L to Left MICPGA
-        self._codec.connect_left_input(INPUT_1, IMPEDANCE_40K)
         input_gain = input_gain if input_gain is not None else float(supervisor.get_setting("INPUT_GAIN", 0.0))  # dB
+        self._codec.connect_left_input(INPUT_1, IMPEDANCE_40K)
         self._codec.left_input_gain = input_gain  # dB
         if not self._mono:
             self._codec.connect_right_input(INPUT_1, IMPEDANCE_40K)
@@ -150,15 +151,20 @@ class uChameleon:
             self._codec.right_input_to_right_line_output = True
 
         # Line Output
+        output_gain = output_gain if output_gain is not None else int(supervisor.get_setting("OUTPUT_GAIN", 0))  # dB
         self._codec.left_line_output_enabled = True
+        self._codec.left_line_output_gain = output_gain
         self._codec.left_line_output_muted = False
         if not self._mono:
             self._codec.right_line_output_enabled = True
+            self._codec.right_line_output_gain = output_gain
             self._codec.right_line_output_muted = False
 
         # True Bypass
         self._pin_bypass = digitalio.DigitalInOut(_PIN_BYPASS)
         self._pin_bypass.switch_to_output()
+        if self.usb_connected:
+            self._pin_bypass.value = True  # Always on if using USB audio
 
         # Control Parameters
         self._bypass = bypass
@@ -175,8 +181,6 @@ class uChameleon:
         if not self._needs_update:
             return
         self._needs_update = False
-
-        self._pin_bypass.value = self._bypass
 
         dac_muted = self._bypass or self._mix <= 0.01 or self._level <= 0.01
         dac_volume = -63.5 * (1.0 - min(self._mix * 2.0, 1.0) * self._level)
@@ -203,10 +207,13 @@ class uChameleon:
                 if not self._bypass and self._sample is not None:
                     self._usb_mixer.play(self._sample)
         else:
+            self._pin_bypass.value = not self._bypass
             self._bypass_changed = False
 
     @property
     def usb_connected(self) -> bool:
+        if not supervisor.get_setting("USB_AUDIO", True):
+            return False
         if hasattr(self, "_usb_mixer") and self._usb_mixer is None:
             return False
         return supervisor.runtime.usb_connected and usb_microphone is not None

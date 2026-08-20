@@ -10,8 +10,8 @@ from uchameleon import uChameleon
 import programs
 
 # Constants
-MIN_SPEED = 0.1
-MAX_SPEED = 20.0
+MIN_SPEED = 0.5
+MAX_SPEED = 8.0
 
 SPEED_MOD = (
     1.0,
@@ -20,23 +20,32 @@ SPEED_MOD = (
     -0.75
 )
 
-# Create Waveforms
+PATTERN_LENGTH = 16
+PATTERNS = (
+    0b1100110011001100,
+    0b1010101010101010,
+    0b1010001010100000,
+    0b1001010110010010,
+    0b1110111011101110,
+    0b1000001010000010,
+    0b1000010010000100,
+    0b1111111011101110,
+)
 
+# Create Waveforms
 SAMPLE_SIZE = 1024
 SAMPLE_VOLUME = 32767
-waveforms = (
-    np.concatenate(( # Triangle
-        np.linspace(-SAMPLE_VOLUME, SAMPLE_VOLUME, num=SAMPLE_SIZE//2, dtype=np.int16),
-        np.linspace(SAMPLE_VOLUME, -SAMPLE_VOLUME, num=SAMPLE_SIZE//2, dtype=np.int16)
-    )),
-    np.array(np.sin(np.linspace(0, 2 * np.pi, SAMPLE_SIZE, endpoint=False)) * SAMPLE_VOLUME, dtype=np.int16), # Sine
-    np.linspace(-SAMPLE_VOLUME, SAMPLE_VOLUME, SAMPLE_SIZE, endpoint=False, dtype=np.int16), # Ramp Up
-    np.linspace(-SAMPLE_VOLUME, SAMPLE_VOLUME, SAMPLE_SIZE, endpoint=False, dtype=np.int16), # Ramp Down
-    np.concatenate(( # Square
-        np.full(SAMPLE_SIZE//2, SAMPLE_VOLUME, dtype=np.int16),
-        np.full(SAMPLE_SIZE//2, -SAMPLE_VOLUME, dtype=np.int16)
-    )),
-)
+STEP_SIZE = SAMPLE_SIZE // PATTERN_LENGTH
+waveforms = []
+for pattern in PATTERNS:
+    waveform = np.zeros(SAMPLE_SIZE, dtype=np.int16)
+    for i in range(PATTERN_LENGTH):
+        bit = 1 << (PATTERN_LENGTH - i - 1)
+        state = bool(pattern & bit)
+        for x in range(STEP_SIZE * i, STEP_SIZE * (i + 1)):
+            waveform[x] = SAMPLE_VOLUME * (state * 2 - 1)
+    waveforms.append(waveform)
+waveforms = tuple(waveforms)
 waveform = -1
 
 # Initialize Hardware

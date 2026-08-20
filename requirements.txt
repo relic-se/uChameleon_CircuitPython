@@ -1,2 +1,4 @@
 adafruit_debouncer
-circuitpython_tlv320aic3204
+relic_tlv320aic3204
+relic_waveform
+synthtools

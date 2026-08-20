@@ -1,4 +1,6 @@
 PROGRAM = "distortion.py"  # Updated when program is changed by holding down both stomp switches
-SAMPLE_RATE = 44100 # hz, possible values: 8000, 11025, 16000, 22050, 32000, 44100, 48000
+SAMPLE_RATE = 44100  # hz, possible values: 8000, 11025, 16000, 22050, 32000, 44100, 48000
+USB_AUDIO = true  # Analog output will be disabled in lieu of USB audio input when an active USB connection is detected
 MONO = true
-INPUT_GAIN = 0.0 # dB, 0.0 dB to 47.5 dB in 0.5 dB increments
+INPUT_GAIN = 0.0  # dB, 0.0 dB to 47.5 dB in 0.5 dB increments
+OUTPUT_GAIN = 0  # dB, -6 dB to 29 dB in 1 dB increments
