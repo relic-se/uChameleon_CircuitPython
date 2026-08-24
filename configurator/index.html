@@ -1,0 +1,1907 @@
+<!--
+SPDX-FileCopyrightText: 2026 Tim Cocks for Adafruit Industries
+SPDX-FileCopyrightText: 2026 Cooper Dalrymple (@relic-se)
+
+SPDX-License-Identifier: MIT
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Audio Effect Config Editor</title>
+	<style>
+	:root {
+		color-scheme: light dark;
+		--bg: #f4f5f7;
+		--panel: #ffffff;
+		--panel-2: #fafbfc;
+		--line: #d8dce3;
+		--text: #1b1f27;
+		--muted: #626b7a;
+		--accent: #b4530a;
+		--accent-soft: #fdf0e4;
+		--danger: #b0202b;
+		--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	}
+	
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #14161a;
+			--panel: #1c1f25;
+			--panel-2: #22262d;
+			--line: #333944;
+			--text: #e6e9ee;
+			--muted: #99a2b0;
+			--accent: #f0913f;
+			--accent-soft: #2e2318;
+			--danger: #f0736f;
+		}
+	}
+	
+	* {
+		box-sizing: border-box;
+	}
+	
+	body {
+		margin: 0;
+		background: var(--bg);
+		color: var(--text);
+		font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	}
+	
+	header {
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		align-items: center;
+		padding: 10px 16px;
+		background: var(--panel);
+		border-bottom: 1px solid var(--line);
+	}
+	
+	header h1 {
+		font-size: 15px;
+		margin: 0 8px 0 0;
+		letter-spacing: .02em;
+	}
+	
+	header .spacer {
+		flex: 1;
+	}
+	
+	main {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+		gap: 16px;
+		padding: 16px;
+		align-items: start;
+	}
+	
+	@media (max-width: 900px) {
+		main {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+	
+	button,
+	select,
+	input[type=text],
+	input[type=number] {
+		font: inherit;
+		color: var(--text);
+		background: var(--panel-2);
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		padding: 4px 8px;
+	}
+	
+	input[type=number] {
+		width: 8.5em;
+	}
+	
+	input[type=text] {
+		min-width: 6em;
+	}
+	
+	button {
+		cursor: pointer;
+		background: var(--panel-2);
+	}
+	
+	button:hover {
+		border-color: var(--accent);
+	}
+	
+	button.primary {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
+		font-weight: 600;
+	}
+	
+	button.primary:hover {
+		filter: brightness(1.08);
+	}
+	
+	button.icon {
+		padding: 2px 7px;
+		line-height: 1.3;
+		color: var(--muted);
+	}
+	
+	button.icon:hover {
+		color: var(--accent);
+	}
+	
+	button.icon.del:hover {
+		color: var(--danger);
+		border-color: var(--danger);
+	}
+	
+	.card {
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		margin-bottom: 14px;
+		overflow: hidden;
+	}
+	
+	.card > .head {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		padding: 8px 12px;
+		background: var(--panel-2);
+		border-bottom: 1px solid var(--line);
+	}
+	
+	.card > .head .title {
+		font-weight: 600;
+	}
+	
+	.card > .body {
+		padding: 10px 12px;
+	}
+	
+	.card.folded {
+		background: var(--panel-2);
+	}
+	
+	.head.collapsible {
+		cursor: pointer;
+		user-select: none;
+	}
+	
+	.head.collapsible:hover {
+		background: var(--accent-soft);
+	}
+	
+	.card.folded > .head,
+	.effect.folded > .head {
+		border-bottom: none;
+	}
+	
+	.caret {
+		color: var(--muted);
+		font-size: 11px;
+		width: 1em;
+	}
+	
+	.ellipsis {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		min-width: 0;
+		max-width: 46%;
+	}
+	
+	.effect {
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		margin-bottom: 10px;
+		background: var(--panel-2);
+	}
+	
+	.effect > .head {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		padding: 6px 10px;
+		border-bottom: 1px solid var(--line);
+	}
+	
+	.effect > .head .num {
+		font: 12px var(--mono);
+		color: var(--muted);
+		min-width: 1.5em;
+	}
+	
+	.effect > .head .name {
+		font-weight: 600;
+		color: var(--accent);
+	}
+	
+	.effect > .body {
+		padding: 8px 10px;
+	}
+	/* "?" doc badge -- panel headers and inline lfo/math blocks alike. */
+	
+	.help {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.3em;
+		height: 1.3em;
+		border-radius: 50%;
+		border: 1px solid var(--line);
+		color: var(--muted);
+		font-size: 11px;
+		font-weight: 700;
+		text-decoration: none;
+		flex: 0 0 auto;
+	}
+	
+	.help:hover {
+		color: var(--accent);
+		border-color: var(--accent);
+	}
+	
+	.row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		align-items: center;
+		padding: 3px 0;
+	}
+	
+	.row > label.pname {
+		min-width: 9.5em;
+		color: var(--muted);
+	}
+	
+	.row .hint {
+		color: var(--muted);
+		font-size: 12px;
+	}
+	
+	.sub {
+		margin: 4px 0 6px 1.5em;
+		padding-left: 10px;
+		border-left: 2px solid var(--line);
+	}
+	
+	.blocks-def {
+		margin-bottom: 10px;
+	}
+	
+	.chip {
+		font: 12px var(--mono);
+		background: var(--accent-soft);
+		color: var(--accent);
+		border-radius: 5px;
+		padding: 1px 6px;
+	}
+	
+	.muted {
+		color: var(--muted);
+	}
+	
+	.small {
+		font-size: 12px;
+	}
+	
+	#jsonPane {
+		position: sticky;
+		top: 60px;
+	}
+	
+	#json {
+		width: 100%;
+		height: 60vh;
+		min-height: 300px;
+		font: 12px/1.4 var(--mono);
+		white-space: pre;
+		overflow: auto;
+		background: var(--panel-2);
+		color: var(--text);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 10px;
+		resize: vertical;
+	}
+	
+	#issues {
+		margin-top: 8px;
+	}
+	
+	#issues .issue {
+		color: var(--danger);
+		font-size: 12px;
+		padding: 2px 0;
+	}
+	
+	#issues .ok {
+		color: var(--muted);
+		font-size: 12px;
+	}
+	
+	dialog {
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--panel);
+		color: var(--text);
+		max-width: 700px;
+		width: 92%;
+	}
+	
+	dialog textarea {
+		width: 100%;
+		height: 45vh;
+		font: 12px var(--mono);
+		background: var(--panel-2);
+		color: var(--text);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 8px;
+	}
+	
+	.toast {
+		position: fixed;
+		bottom: 18px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--accent);
+		color: #fff;
+		padding: 8px 16px;
+		border-radius: 20px;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity .2s;
+	}
+	
+	.toast.show {
+		opacity: 1;
+	}
+	</style>
+</head>
+<body>
+	<header>
+		<h1>Audio Effect Config Editor</h1>
+		<label class="small muted" for="packName">pack name</label>
+		<input id="packName" type="text" data-path='["name"]' data-vtype="text" value="TESTPACK"> <span class="spacer"></span>
+		<button data-action="collapseall">collapse all</button>
+		<button data-action="expandall">expand all</button>
+		<button id="btnImport">Paste / import JSON…</button>
+		<button id="btnDownload">Download config.json</button>
+		<button id="btnCopy" class="primary">Copy config JSON</button>
+	</header>
+	<main>
+		<div id="editor"></div>
+		<div id="jsonPane">
+			<div class="card">
+				<div class="head"> <span class="title">config.json</span> <span class="spacer" style="flex:1"></span>
+					<button id="btnCopy2" class="icon">copy</button>
+				</div>
+				<div class="body">
+					<div id="json" tabindex="0"></div>
+					<div id="issues"></div>
+					<p class="small muted" style="margin:10px 0 0"> Copy this and save it to <code>CIRCUITPY/config.json</code>. The demo uses the first four presets, one per red LED; spot 0 is the clean passthrough. It also uses the first four samples, one per white LED, walked with MIDDLE and played with BOTTOM. <code>$handle</code> is supplied by the demo to preset effects only: 0.0 handle out, 1.0 squeezed in. </p>
+				</div>
+			</div>
+		</div>
+	</main>
+	<dialog id="importDlg">
+		<form method="dialog">
+			<h3 style="margin-top:0">Import config JSON</h3>
+			<textarea id="importText" placeholder="Paste a config.json here…"></textarea>
+			<p id="importErr" class="small" style="color:var(--danger);min-height:1.2em"></p>
+			<div class="row" style="justify-content:flex-end">
+				<input type="file" id="importFile" accept=".json,application/json" class="small"> <span class="spacer" style="flex:1"></span>
+				<button value="cancel">Cancel</button>
+				<button id="importOk" class="primary" value="ok" type="button">Load</button>
+			</div>
+		</form>
+	</dialog>
+	<div class="toast" id="toast"></div>
+	<script>
+	"use strict";
+	/* ------------------------------------------------------------------ *
+	 * Effect / block metadata -- mirrors config_loader.EFFECTS and _BLOCKS
+	 * ------------------------------------------------------------------ */
+	const DISTORTION_MODES = ["CLIP", "LOFI", "OVERDRIVE", "WAVESHAPE"];
+	const FILTER_MODES = ["low_pass", "high_pass", "band_pass", "notch", "low_shelf", "high_shelf", "peaking_eq"];
+	const MATH_OPS = ["SUM", "ADD_SUB", "PRODUCT", "MUL_DIV", "SCALE_OFFSET", "OFFSET_SCALE", "LERP", "CONSTRAINED_LERP", "DIV_ADD", "ADD_DIV", "MID", "MAX", "MIN", "ABS"];
+	const WAVEFORM_SHAPES = ["sine", "triangle", "square", "saw", "ramp_down"];
+	// type: int | float | bool | block | enum | biquad | taps
+	const EFFECTS = {
+		chorus: {
+			label: "Chorus",
+			module: "audiodelays",
+			doc: "audiodelays.Chorus",
+			params: [{
+				name: "max_delay_ms",
+				type: "int",
+				def: 50,
+				step: 1,
+				hint: "buffer size; delay_ms cannot exceed it"
+			}, {
+				name: "delay_ms",
+				type: "block",
+				def: 25
+			}, {
+				name: "voices",
+				type: "block",
+				def: 3,
+				hint: "1 - max_delay_ms/1ms voices"
+			}, {
+				name: "mix",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, ]
+		},
+		echo: {
+			label: "Echo",
+			module: "audiodelays",
+			doc: "audiodelays.Echo",
+			params: [{
+				name: "max_delay_ms",
+				type: "int",
+				def: 1000,
+				step: 10
+			}, {
+				name: "delay_ms",
+				type: "block",
+				def: 500
+			}, {
+				name: "decay",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "mix",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "freq_shift",
+				type: "bool",
+				def: false,
+				hint: "change delay pitch-shifts instead of resampling"
+			}, ]
+		},
+		flanger: {
+			label: "Flanger",
+			module: "audiodelays",
+			doc: "audiodelays.Flanger",
+			params: [{
+				name: "max_delay_ms",
+				type: "int",
+				def: 10,
+				min: 1,
+				max: 100,
+				step: 1,
+				hint: "top of the sweep, 1 - 100ms; longer drifts towards chorus"
+			}, {
+				name: "delay_ms",
+				type: "block",
+				def: 1.0,
+				step: 0.1,
+				hint: "floor of the sweep, cannot exceed max_delay_ms"
+			}, {
+				name: "rate",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 20,
+				step: 0.05,
+				hint: "sweep speed in Hz, 0 - 20; 0 holds still"
+			}, {
+				name: "depth",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05,
+				hint: "how much of the range above delay_ms is swept"
+			}, {
+				name: "feedback",
+				type: "block",
+				def: 0.5,
+				min: -0.95,
+				max: 0.95,
+				step: 0.05,
+				hint: "-0.95 - 0.95; negative inverts polarity"
+			}, {
+				name: "mix",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "invert",
+				type: "bool",
+				def: false,
+				hint: "subtract the wet signal instead of adding it"
+			}, ]
+		},
+		granular_pitch_shift: {
+			label: "Granular Pitch Shift",
+			module: "audiodelays",
+			doc: "audiodelays.GranularPitchShift",
+			params: [{
+				name: "semitones",
+				type: "block",
+				def: 0,
+				step: 1
+			}, {
+				name: "mix",
+				type: "block",
+				def: 1.0,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "grain_size",
+				type: "int",
+				def: 1024,
+				step: 64
+			}, {
+				name: "density",
+				type: "int",
+				def: 2,
+				min: 1,
+				max: 8,
+				hint: "overlapping grains, 1 - 8"
+			}, {
+				name: "spread",
+				type: "float",
+				def: 0.0,
+				min: 0,
+				max: 1,
+				step: 0.05,
+				hint: "grain start jitter (not a block)"
+			}, ]
+		},
+		multi_tap_delay: {
+			label: "Multi-Tap Delay",
+			module: "audiodelays",
+			doc: "audiodelays.MultiTapDelay",
+			params: [{
+				name: "max_delay_ms",
+				type: "int",
+				def: 750,
+				step: 10
+			}, {
+				name: "delay_ms",
+				type: "block",
+				def: 500
+			}, {
+				name: "decay",
+				type: "block",
+				def: 0.6,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "mix",
+				type: "block",
+				def: 0.3,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "taps",
+				type: "taps",
+				def: [
+					[0.333, 0.6],
+					[0.666, 0.8], 1.0
+				]
+			}, ]
+		},
+		pitch_shift: {
+			label: "Pitch Shift",
+			module: "audiodelays",
+			doc: "audiodelays.PitchShift",
+			params: [{
+				name: "semitones",
+				type: "block",
+				def: 0,
+				step: 1
+			}, {
+				name: "mix",
+				type: "block",
+				def: 1.0,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "window",
+				type: "int",
+				def: 1024,
+				step: 64
+			}, {
+				name: "overlap",
+				type: "int",
+				def: 128,
+				step: 32
+			}, ]
+		},
+		distortion: {
+			label: "Distortion",
+			module: "audiofilters",
+			doc: "audiofilters.Distortion",
+			params: [{
+				name: "drive",
+				type: "block",
+				def: 0.6,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "pre_gain",
+				type: "block",
+				def: 0,
+				step: 1,
+				hint: "dB"
+			}, {
+				name: "post_gain",
+				type: "block",
+				def: 0,
+				step: 1,
+				hint: "dB"
+			}, {
+				name: "mode",
+				type: "enum",
+				def: "OVERDRIVE",
+				values: DISTORTION_MODES
+			}, {
+				name: "soft_clip",
+				type: "bool",
+				def: false
+			}, {
+				name: "mix",
+				type: "block",
+				def: 1.0,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, ]
+		},
+		filter: {
+			label: "Filter",
+			module: "audiofilters",
+			doc: "audiofilters.Filter",
+			params: [{
+				name: "filter",
+				type: "biquad",
+				def: [{
+					mode: "low_pass",
+					frequency: 2000,
+					Q: 0.7071
+				}]
+			}, {
+				name: "mix",
+				type: "block",
+				def: 1.0,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, ]
+		},
+		phaser: {
+			label: "Phaser",
+			module: "audiofilters",
+			doc: "audiofilters.Phaser",
+			params: [{
+				name: "frequency",
+				type: "block",
+				def: 1000,
+				step: 10
+			}, {
+				name: "feedback",
+				type: "block",
+				def: 0.7,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "mix",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "stages",
+				type: "int",
+				def: 6,
+				min: 1,
+				step: 1
+			}, ]
+		},
+		freeverb: {
+			label: "Freeverb (reverb)",
+			module: "audiofreeverb",
+			doc: "audiofreeverb.Freeverb",
+			params: [{
+				name: "roomsize",
+				type: "block",
+				def: 0.8,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "damp",
+				type: "block",
+				def: 0.4,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, {
+				name: "mix",
+				type: "block",
+				def: 0.5,
+				min: 0,
+				max: 1,
+				step: 0.05
+			}, ]
+		},
+	};
+	// Effect names config_loader accepts as aliases, folded to the table key.
+	const ALIASES = {
+		reverb: "freeverb",
+		delay: "echo",
+		multitap_delay: "multi_tap_delay",
+		multitapdelay: "multi_tap_delay",
+		pitchshift: "pitch_shift",
+		granularpitchshift: "granular_pitch_shift",
+	};
+
+	function docURL(doc) {
+		const mod = doc.split(".")[0];
+		return "https://docs.circuitpython.org/en/latest/shared-bindings/" + mod + "/index.html#" + doc;
+	}
+	// The "?" badge that opens the CircuitPython docs for a class. It sits inside
+	// a collapsible head, so its click must not fold the pane.
+	function helpLink(doc) {
+		return '<a class="help" href="' + esc(docURL(doc)) + '" target="_blank" rel="noopener" ' + 'title="CircuitPython docs: ' + esc(doc) + '" onclick="event.stopPropagation()">?</a>';
+	}
+
+	function normalizeEffect(name) {
+		if(typeof name !== "string") return null;
+		let out = "";
+		for(let i = 0; i < name.length; i++) {
+			const c = name[i];
+			if(c >= "A" && c <= "Z" && i && !(name[i - 1] >= "A" && name[i - 1] <= "Z")) out += "_";
+			out += c;
+		}
+		let key = out.toLowerCase().replace(/[ -]/g, "_");
+		key = ALIASES[key] || key;
+		return EFFECTS[key] ? key : null;
+	}
+	const LFO_PARAMS = [{
+		name: "waveform",
+		type: "waveform",
+		def: "sine"
+	}, {
+		name: "rate",
+		type: "block",
+		def: 0.25,
+		step: 0.05,
+		hint: "Hz"
+	}, {
+		name: "scale",
+		type: "block",
+		def: 1.0,
+		hint: "output is offset ± scale"
+	}, {
+		name: "offset",
+		type: "block",
+		def: 0.0
+	}, {
+		name: "phase_offset",
+		type: "block",
+		def: 0.0,
+		min: 0,
+		max: 1,
+		step: 0.05
+	}, {
+		name: "once",
+		type: "bool",
+		def: false
+	}, {
+		name: "interpolate",
+		type: "bool",
+		def: true
+	}, ];
+	const MATH_PARAMS = [{
+		name: "operation",
+		type: "enum",
+		def: "SUM",
+		values: MATH_OPS,
+		required: true
+	}, {
+		name: "a",
+		type: "block",
+		def: 0.0,
+		required: true
+	}, {
+		name: "b",
+		type: "block",
+		def: 0.0
+	}, {
+		name: "c",
+		type: "block",
+		def: 0.0
+	}, ];
+	/* ------------------------------------------------------------------ *
+	 * State
+	 * ------------------------------------------------------------------ */
+	const PLAYMODES = ["oneshot", "hold", "startstop"];
+	const MAX_SAMPLES = 4;
+	const DEFAULT_STATE = {
+		name: "TESTPACK",
+		presets: [{
+			blocks: {},
+			list: [{
+				effect: "pitch_shift",
+				semitones: {
+					block: "math",
+					operation: "constrained_lerp",
+					a: -12,
+					b: 12,
+					c: "$handle"
+				},
+				mix: 1.0,
+				window: 1024,
+				overlap: 128
+			}, {
+				effect: "filter",
+				filter: [{
+					mode: "low_pass",
+					frequency: 3500,
+					Q: 0.7071
+				}],
+				mix: 1.0
+			}, ]
+		}, ],
+		samples: [],
+	};
+	let state = clone(DEFAULT_STATE);
+	// The config that "reset to example" overwrote, as JSON text, or null when
+	// there is nothing to undo. Read back from localStorage at startup.
+	let resetBackup = null;
+	// Whether a pane is folded shut is kept on the preset/effect object itself, so
+	// that reordering or duplicating one carries its fold state along. `serialize`
+	// strips it, so it never reaches the device.
+	const COLLAPSED = "_collapsed";
+
+	function clone(v) {
+		return JSON.parse(JSON.stringify(v));
+	}
+
+	function getAt(path) {
+		let node = state;
+		for(const key of path) node = node[key];
+		return node;
+	}
+
+	function setAt(path, value) {
+		let node = state;
+		for(let i = 0; i < path.length - 1; i++) node = node[path[i]];
+		node[path[path.length - 1]] = value;
+	}
+
+	function deleteAt(path) {
+		let node = state;
+		for(let i = 0; i < path.length - 1; i++) node = node[path[i]];
+		const last = path[path.length - 1];
+		if(Array.isArray(node)) node.splice(last, 1);
+		else delete node[last];
+	}
+	/* ------------------------------------------------------------------ *
+	 * Serialization -- state -> the JSON that goes on the device
+	 * ------------------------------------------------------------------ */
+	function serializeEffectList(list) {
+		return clone(list).map((spec) => {
+			// A single biquad is written as a dict; several stay a list.
+			if(Array.isArray(spec.filter) && spec.filter.length === 1) spec.filter = spec.filter[0];
+			delete spec[COLLAPSED]; // editor-only, never written to the device
+			return spec;
+		});
+	}
+
+	function serializeBlocks(blocks) {
+		const out = clone(blocks);
+		for(const name of Object.keys(out)) delete out[name][COLLAPSED];
+		return out;
+	}
+
+	function serialize() {
+		const out = {
+			name: state.name,
+			presets: []
+		};
+		for(const preset of state.presets) {
+			const p = {};
+			if(preset.blocks && Object.keys(preset.blocks).length) p.blocks = serializeBlocks(preset.blocks);
+			p.list = serializeEffectList(preset.list);
+			out.presets.push(p);
+		}
+		if(state.samples && state.samples.length) {
+			out.samples = state.samples.map((sample) => {
+				const s = {
+					file: sample.file,
+					playmode: sample.playmode
+				};
+				if(sample.blocks && Object.keys(sample.blocks).length) s.blocks = serializeBlocks(sample.blocks);
+				if(sample.effects && sample.effects.length) s.effects = serializeEffectList(sample.effects);
+				return s;
+			});
+		}
+		return out;
+	}
+	// Pretty-print, but keep the small leaf objects (blocks, biquads, taps) on one
+	// line so a chain stays readable.
+	function formatJSON(value, indent) {
+		indent = indent || "";
+		const next = indent + "  ";
+		if(value === null || typeof value !== "object") return JSON.stringify(value);
+		const flat = JSON.stringify(value);
+		if(flat.length <= 96 && !/[[{].*[[{]/.test(flat.slice(1))) return flat;
+		if(Array.isArray(value)) {
+			if(!value.length) return "[]";
+			return "[\n" + value.map((v) => next + formatJSON(v, next)).join(",\n") + "\n" + indent + "]";
+		}
+		const keys = Object.keys(value);
+		if(!keys.length) return "{}";
+		return "{\n" + keys.map((k) => next + JSON.stringify(k) + ": " + formatJSON(value[k], next)).join(",\n") + "\n" + indent + "}";
+	}
+	/* ------------------------------------------------------------------ *
+	 * Validation
+	 * ------------------------------------------------------------------ */
+	const HOST_BLOCKS = ["handle"];
+
+	function validate() {
+		const issues = [];
+		if(state.presets.length > 4) {
+			issues.push("The demo only uses the first 4 presets (one per red LED); " + (state.presets.length - 4) + " will be ignored.");
+		}
+		state.presets.forEach((preset, pi) => {
+			const known = new Set(HOST_BLOCKS.concat(Object.keys(preset.blocks || {})));
+			const where = "preset " + (pi + 1);
+			if(!preset.list.length) issues.push(where + " has no effects.");
+			const walk = (value, label) => {
+				if(typeof value === "string" && value.startsWith("$")) {
+					const key = value.slice(1);
+					if(!key) issues.push(where + ": " + label + " has an empty $ reference.");
+					else if(!known.has(key)) issues.push(where + ": " + label + ' refers to undefined block "$' + key + '".');
+				} else if(Array.isArray(value)) {
+					value.forEach((v) => walk(v, label));
+				} else if(value && typeof value === "object") {
+					if(value.block === "math") {
+						if(!value.operation) issues.push(where + ": " + label + " math block needs an operation.");
+						if(value.a === undefined) issues.push(where + ": " + label + " math block needs a.");
+					}
+					for(const k of Object.keys(value)) walk(value[k], label);
+				}
+			};
+			Object.keys(preset.blocks || {}).forEach((n) => walk(preset.blocks[n], "block $" + n));
+			preset.list.forEach((spec, ei) => {
+				const label = "effect " + (ei + 1) + " (" + spec.effect + ")";
+				for(const k of Object.keys(spec))
+					if(k !== "effect") walk(spec[k], label + " " + k);
+				if(spec.effect === "filter") {
+					const list = Array.isArray(spec.filter) ? spec.filter : [spec.filter];
+					if(!list.length || !list[0]) issues.push(where + ": " + label + " needs at least one biquad.");
+					list.forEach((f) => {
+						if(f && f.frequency === undefined) issues.push(where + ": " + label + " biquad needs a frequency.");
+					});
+				}
+				const maxd = spec.max_delay_ms,
+					d = spec.delay_ms;
+				if(typeof maxd === "number" && typeof d === "number" && d > maxd) {
+					issues.push(where + ": " + label + " delay_ms (" + d + ") is longer than max_delay_ms (" + maxd + ").");
+				}
+			});
+		});
+		if(state.samples.length > MAX_SAMPLES) {
+			issues.push("The demo only uses the first " + MAX_SAMPLES + " samples (one per white LED); " + (state.samples.length - MAX_SAMPLES) + " will be ignored.");
+		}
+		state.samples.forEach((sample, si) => {
+			const where = "sample " + (si + 1);
+			if(!sample.file) issues.push(where + " needs a wave file name.");
+			// build_sample_chain() in code_ep2350_demo_v2.py builds sample effects
+			// via create_effects({"list": ..., "blocks": sample["blocks"]},
+			// blocks={"handle": handle_control}, ...), so a sample's own "blocks"
+			// mapping plus $handle are both available -- same namespace rules as a
+			// preset (see the "preset" validation above).
+			const known = new Set(HOST_BLOCKS.concat(Object.keys(sample.blocks || {})));
+			const walk = (value, label) => {
+				if(typeof value === "string" && value.startsWith("$")) {
+					const key = value.slice(1);
+					if(!key) issues.push(where + ": " + label + " has an empty $ reference.");
+					else if(!known.has(key)) issues.push(where + ": " + label + ' refers to undefined block "$' + key + '".');
+				} else if(Array.isArray(value)) {
+					value.forEach((v) => walk(v, label));
+				} else if(value && typeof value === "object") {
+					for(const k of Object.keys(value)) walk(value[k], label);
+				}
+			};
+			Object.keys(sample.blocks || {}).forEach((n) => walk(sample.blocks[n], "block $" + n));
+			sample.effects.forEach((spec, ei) => {
+				const label = "effect " + (ei + 1) + " (" + spec.effect + ")";
+				for(const k of Object.keys(spec))
+					if(k !== "effect") walk(spec[k], label + " " + k);
+				if(spec.effect === "filter") {
+					const list = Array.isArray(spec.filter) ? spec.filter : [spec.filter];
+					if(!list.length || !list[0]) issues.push(where + ": " + label + " needs at least one biquad.");
+					list.forEach((f) => {
+						if(f && f.frequency === undefined) issues.push(where + ": " + label + " biquad needs a frequency.");
+					});
+				}
+				const maxd = spec.max_delay_ms,
+					d = spec.delay_ms;
+				if(typeof maxd === "number" && typeof d === "number" && d > maxd) {
+					issues.push(where + ": " + label + " delay_ms (" + d + ") is longer than max_delay_ms (" + maxd + ").");
+				}
+			});
+		});
+		return issues;
+	}
+	/* ------------------------------------------------------------------ *
+	 * Rendering helpers
+	 * ------------------------------------------------------------------ */
+	const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+		"&": "&amp;",
+		"<": "&lt;",
+		">": "&gt;",
+		'"': "&quot;",
+		"'": "&#39;"
+	}[c]));
+	const p2a = (path) => esc(JSON.stringify(path));
+	// config_loader folds case and spacing on every name it looks up, so
+	// "constrained_lerp", "CONSTRAINED_LERP" and "Constrained Lerp" are one option.
+	const fold = (v) => (typeof v === "string" ? v.replace(/[ -]/g, "_").toUpperCase() : v);
+
+	function selectHTML(path, value, options, extra) {
+		const list = options.slice();
+		if(value !== "" && value !== undefined && !list.some((o) => fold(Array.isArray(o) ? o[0] : o) === fold(value))) {
+			// Keep an unrecognized value visible rather than silently showing another.
+			list.unshift([value, value + "  (unknown)"]);
+		}
+		const opts = list.map((o) => {
+			const [val, text] = Array.isArray(o) ? o : [o, o];
+			return '<option value="' + esc(val) + '"' + (fold(val) === fold(value) ? " selected" : "") + ">" + esc(text) + "</option>";
+		}).join("");
+		return '<select data-path=\'' + p2a(path) + "' " + (extra || "") + ">" + opts + "</select>";
+	}
+
+	function numberHTML(path, value, meta) {
+		const attrs = ["min", "max", "step"].map((k) => (meta && meta[k] !== undefined ? " " + k + '="' + meta[k] + '"' : "")).join("");
+		return '<input type="number" data-path=\'' + p2a(path) + '\' data-vtype="' + (meta && meta.type === "int" ? "int" : "float") + '" value="' + esc(value) + '"' + attrs + ">";
+	}
+
+	function boolHTML(path, value) {
+		return '<label class="small"><input type="checkbox" data-path=\'' + p2a(path) + '\' data-vtype="bool"' + (value ? " checked" : "") + "> " + (value ? "true" : "false") + "</label>";
+	}
+
+	function btn(action, path, text, cls) {
+		return '<button class="icon ' + (cls || "") + '" data-action="' + action + '" data-path=\'' + p2a(path) + "'>" + esc(text) + "</button>";
+	}
+	/* ---- block inputs ---- */
+	const BLOCK_DOC = {
+		lfo: "synthio.LFO",
+		math: "synthio.Math"
+	};
+
+	function blockKind(value) {
+		if(value === null || value === undefined) return "none";
+		if(typeof value === "number") return "const";
+		if(typeof value === "string") return "ref";
+		if(value && value.block === "lfo") return "lfo";
+		if(value && value.block === "math") return "math";
+		return "const";
+	}
+	// `blocksOwner` is the path (e.g. ["presets", pi] or ["samples", si]) to the
+	// preset or sample whose "blocks" mapping block-input params may reference,
+	// or `null`/`undefined` where there is no such owner (e.g. within a block's
+	// own definition) -- in which case only the host-supplied blocks (currently
+	// just $handle, see build_sample_chain()/build() in code_ep2350_demo_v2.py)
+	// are offered.
+	function refNames(blocksOwner) {
+		if(!blocksOwner) return HOST_BLOCKS.slice();
+		const owner = getAt(blocksOwner);
+		const names = Object.keys((owner && owner.blocks) || {});
+		for(const h of HOST_BLOCKS)
+			if(!names.includes(h)) names.push(h);
+		return names;
+	}
+
+	function blockHTML(path, value, meta, blocksOwner) {
+		const kind = blockKind(value);
+		const kinds = [
+			["const", "value"],
+			["ref", "$block"]
+		].concat([
+			["lfo", "LFO"],
+			["math", "Math"],
+			["none", "none (0)"]
+		]);
+		let html = selectHTML(path, kind, kinds, 'data-action="blockkind"');
+		if(kind === "const") {
+			html += " " + numberHTML(path, value, meta);
+		} else if(kind === "ref") {
+			const names = refNames(blocksOwner);
+			const cur = String(value || "").replace(/^\$/, "");
+			const opts = names.map((n) => ["$" + n, "$" + n]);
+			if(cur && !names.includes(cur)) opts.unshift(["$" + cur, "$" + cur + "  (undefined)"]);
+			html += " " + selectHTML(path, "$" + cur, opts, 'data-vtype="text"');
+		} else if(kind === "lfo" || kind === "math") {
+			const params = kind === "lfo" ? LFO_PARAMS : MATH_PARAMS;
+			html += ' <span class="chip">' + kind + "</span>" + helpLink(BLOCK_DOC[kind]);
+			html += '<div class="sub">' + paramRows(value, path, params, blocksOwner) + "</div>";
+		}
+		return html;
+	}
+	/* ---- waveform ---- */
+	function waveformHTML(path, value, blocksOwner) {
+		if(Array.isArray(value)) {
+			return '<input type="text" style="width:22em" data-path=\'' + p2a(path) + '\' data-vtype="intlist" value="' + esc(value.join(", ")) + '"> <span class="hint">literal 16-bit samples</span>';
+		}
+		const shape = typeof value === "object" && value ? value.shape : value;
+		const size = typeof value === "object" && value && value.size !== undefined ? value.size : "";
+		let html = selectHTML(path, shape, WAVEFORM_SHAPES, 'data-action="waveshape"');
+		html += ' <label class="small muted">size</label>';
+		html += '<input type="number" style="width:6em" min="2" step="1" data-action="wavesize" data-path=\'' + p2a(path) + '\' value="' + esc(size) + '" placeholder="64">';
+		return html;
+	}
+	/* ---- taps ---- */
+	function tapsHTML(path, value, blocksOwner) {
+		const taps = Array.isArray(value) ? value : [];
+		let html = "";
+		taps.forEach((tap, i) => {
+			const paired = Array.isArray(tap);
+			const pos = paired ? tap[0] : tap;
+			html += '<div class="row">';
+			html += '<span class="small muted" style="min-width:3.5em">tap ' + (i + 1) + "</span>";
+			html += '<label class="small muted">pos</label>' + numberHTML(path.concat(paired ? [i, 0] : [i]), pos, {
+				min: 0,
+				max: 1,
+				step: 0.01
+			});
+			html += ' <label class="small"><input type="checkbox" data-action="tappair" data-path=\'' + p2a(path.concat([i])) + "'" + (paired ? " checked" : "") + "> level</label>";
+			if(paired) html += numberHTML(path.concat([i, 1]), tap[1], {
+				min: 0,
+				max: 1,
+				step: 0.05
+			});
+			html += " " + btn("taprm", path.concat([i]), "✕", "del");
+			html += "</div>";
+		});
+		html += '<div class="row">' + btn("tapadd", path, "+ tap") + "</div>";
+		return html;
+	}
+	/* ---- biquads ---- */
+	function biquadHTML(path, value, blocksOwner) {
+		const list = Array.isArray(value) ? value : [value];
+		let html = "";
+		list.forEach((bq, i) => {
+			const bp = path.concat([i]);
+			html += '<div class="sub">';
+			html += '<div class="row"><span class="small muted" style="min-width:4.5em">biquad ' + (i + 1) + "</span>" + selectHTML(bp.concat(["mode"]), bq.mode || "low_pass", FILTER_MODES, 'data-vtype="text"') + (list.length > 1 ? " " + btn("bqrm", bp, "✕", "del") : "") + "</div>";
+			html += '<div class="row"><label class="pname">frequency</label>' + blockHTML(bp.concat(["frequency"]), bq.frequency === undefined ? 1000 : bq.frequency, {
+				step: 10
+			}, blocksOwner) + "</div>";
+			html += optionalRow(bq, bp, {
+				name: "Q",
+				type: "block",
+				def: 0.7071,
+				step: 0.01
+			}, blocksOwner);
+			html += optionalRow(bq, bp, {
+				name: "A",
+				type: "block",
+				def: 1.0,
+				step: 0.05,
+				hint: "peaking/shelving gain, A = 10 ** (dB / 40)"
+			}, blocksOwner);
+			html += "</div>";
+		});
+		html += '<div class="row">' + btn("bqadd", path, "+ biquad in series") + "</div>";
+		return html;
+	}
+	/* ---- generic parameter rows ---- */
+	function valueHTML(path, value, meta, blocksOwner) {
+		switch(meta.type) {
+			case "int":
+				return numberHTML(path, value, meta);
+			case "float":
+				return numberHTML(path, value, meta);
+			case "bool":
+				return boolHTML(path, value);
+			case "enum":
+				return selectHTML(path, value, meta.values, 'data-vtype="text"');
+			case "waveform":
+				return waveformHTML(path, value, blocksOwner);
+			case "taps":
+				return tapsHTML(path, value, blocksOwner);
+			case "biquad":
+				return biquadHTML(path, value, blocksOwner);
+			default:
+				return blockHTML(path, value, meta, blocksOwner);
+		}
+	}
+
+	function optionalRow(owner, ownerPath, meta, blocksOwner) {
+		const present = owner[meta.name] !== undefined;
+		const path = ownerPath.concat([meta.name]);
+		let html = '<div class="row">';
+		html += '<label class="pname">';
+		if(!meta.required) {
+			html += '<input type="checkbox" data-action="toggleparam" data-path=\'' + p2a(path) + "' data-def='" + esc(JSON.stringify(meta.def)) + "'" + (present ? " checked" : "") + "> ";
+		}
+		html += esc(meta.name) + "</label>";
+		if(present) {
+			html += valueHTML(path, owner[meta.name], meta, blocksOwner);
+			if(meta.hint) html += ' <span class="hint">' + esc(meta.hint) + "</span>";
+		} else {
+			html += '<span class="hint">not set — the effect\'s default is used</span>';
+		}
+		html += "</div>";
+		return html;
+	}
+
+	function paramRows(owner, ownerPath, params, blocksOwner) {
+		return params.map((meta) => optionalRow(owner, ownerPath, meta, blocksOwner)).join("");
+	}
+	/* ---- named ("shared") blocks, carried by both presets and samples ---- */
+	// What "+ LFO" / "+ Math" drops in, and what switching an existing named
+	// block's type resets it to.
+	const NAMED_BLOCK_KINDS = [
+		["lfo", "LFO"],
+		["math", "Math"]
+	];
+	const NEW_NAMED_BLOCK = {
+		lfo: {
+			block: "lfo",
+			waveform: "sine",
+			rate: 0.25,
+			scale: 1000,
+			offset: 2000
+		},
+		math: {
+			block: "math",
+			operation: "SUM",
+			a: 0.0,
+			b: 0.0
+		},
+	};
+
+	function renderNamedBlocks(ownerPath, blocks) {
+		const names = Object.keys(blocks || {});
+		const addBtn = (kind, text) => '<button class="icon" data-action="blockadd" data-kind="' + kind + '" data-path=\'' + p2a(ownerPath) + "'>" + esc(text) + "</button>";
+		let html = '<div class="blocks-def">';
+		html += '<div class="row"><strong class="small">Shared blocks</strong>' + '<span class="hint">an LFO or Math block several parameters can point at with <code>$name</code></span>' + '<span style="flex:1"></span>' + addBtn("lfo", "+ LFO") + addBtn("math", "+ Math") + "</div>";
+		names.forEach((name) => {
+			const bp = ownerPath.concat(["blocks", name]);
+			const block = blocks[name];
+			const kind = block.block === "math" ? "math" : "lfo";
+			const folded = !!block[COLLAPSED];
+			html += '<div class="effect' + (folded ? " folded" : "") + '">';
+			html += '<div class="head collapsible" data-collapse data-path=\'' + p2a(bp) + '\' title="click to ' + (folded ? "expand" : "collapse") + '">';
+			html += '<span class="caret">' + (folded ? "▸" : "▾") + "</span>";
+			html += '<span class="chip">$' + esc(name) + "</span>";
+			html += '<input type="text" style="width:9em" data-action="blockrename" data-path=\'' + p2a(bp) + '\' value="' + esc(name) + '">';
+			html += selectHTML(bp, kind, NAMED_BLOCK_KINDS, 'data-action="blocktype"');
+			html += helpLink(BLOCK_DOC[kind]);
+			if(folded) html += '<span class="small muted ellipsis">' + esc(summarize(block)) + "</span>";
+			html += '<span style="flex:1"></span>';
+			html += btn("blockrm", bp, "✕", "del");
+			html += "</div>";
+			if(folded) {
+				html += "</div>";
+				return;
+			}
+			html += '<div class="body">' + paramRows(block, bp, kind === "math" ? MATH_PARAMS : LFO_PARAMS, ownerPath) + "</div></div>";
+		});
+		if(!names.length) html += '<div class="row hint">none — parameters can still use <code>$handle</code>.</div>';
+		html += "</div>";
+		return html;
+	}
+	/* ---- effect chain (shared by presets' "list" and samples' "effects") ---- */
+	// `basePath` (e.g. ["presets", pi] or ["samples", si]) doubles as the
+	// blocks-owner path passed down to `paramRows`/`refNames` -- both presets
+	// and samples carry their own "blocks" mapping alongside their effect list.
+	function renderEffectChain(basePath, listKey, list, sourceLabel) {
+		let html = "";
+		html += '<div class="row"><strong class="small">Effect chain</strong>' + '<span class="hint">' + esc(sourceLabel) + " → " + list.map((s) => esc(s.effect)).join(" → ") + (list.length ? " → " : "") + "output</span></div>";
+		list.forEach((spec, ei) => {
+			const key = normalizeEffect(spec.effect);
+			const info = key ? EFFECTS[key] : null;
+			const ep = basePath.concat([listKey, ei]);
+			const fxFolded = !!spec[COLLAPSED];
+			html += '<div class="effect' + (fxFolded ? " folded" : "") + '">';
+			html += '<div class="head collapsible" data-collapse data-path=\'' + p2a(ep) + '\' title="click to ' + (fxFolded ? "expand" : "collapse") + '">';
+			html += '<span class="caret">' + (fxFolded ? "▸" : "▾") + "</span>";
+			html += '<span class="num">' + (ei + 1) + "</span>";
+			html += '<span class="name">' + esc(info ? info.label : spec.effect) + "</span>";
+			html += '<span class="small muted">' + esc(info ? info.module : "unknown effect") + "</span>";
+			if(info && info.doc) html += helpLink(info.doc);
+			if(fxFolded) html += '<span class="small muted ellipsis">' + esc(summarize(spec)) + "</span>";
+			html += '<span style="flex:1"></span>';
+			html += btn("fxup", ep, "▲") + btn("fxdown", ep, "▼") + btn("fxdup", ep, "duplicate") + btn("fxrm", ep, "✕", "del");
+			html += "</div>";
+			if(fxFolded) {
+				html += "</div>";
+				return;
+			}
+			html += "<div class='body'>";
+			if(info) {
+				html += paramRows(spec, ep, info.params, basePath);
+			} else {
+				html += '<div class="row" style="color:var(--danger)">Unknown effect "' + esc(String(spec.effect)) + '" — kept as-is, edit it in the JSON.</div>';
+			}
+			html += "</div></div>";
+		});
+		html += '<div class="row">' + selectHTML(basePath, "", [
+			["", "+ add effect…"]
+		].concat(Object.keys(EFFECTS).map((k) => [k, EFFECTS[k].label])), 'data-action="fxadd" data-listkey="' + listKey + '"') + "</div>";
+		return html;
+	}
+	/* ---- top level ---- */
+	// One-line "mix 1, window 1024, semitones math" for a folded effect pane.
+	function summarize(spec) {
+		const parts = [];
+		for(const key of Object.keys(spec)) {
+			if(key === "effect" || key === "block" || key === COLLAPSED) continue;
+			const value = spec[key];
+			let text;
+			if(value === null) text = "none";
+			else if(Array.isArray(value)) {
+				text = key === "taps" ? value.length + " taps" : value.map((v) => (v && v.mode) || "…").join(" + ");
+			} else if(typeof value === "object") text = value.block || "…";
+			else text = String(value);
+			parts.push(key + " " + text);
+		}
+		const out = parts.join(", ");
+		return out.length > 72 ? out.slice(0, 71) + "…" : out;
+	}
+
+	function render() {
+		const active = document.activeElement;
+		const focusKey = active && active.dataset && active.dataset.path ? active.dataset.path + "|" + (active.dataset.action || "") + "|" + active.tagName : null;
+		const caret = active && active.selectionStart !== undefined && active.type !== "number" ? [active.selectionStart, active.selectionEnd] : null;
+		let html = "";
+		state.presets.forEach((preset, pi) => {
+			const folded = !!preset[COLLAPSED];
+			html += '<div class="card' + (folded ? " folded" : "") + '">';
+			html += '<div class="head collapsible" data-collapse data-path=\'' + p2a(["presets", pi]) + '\' title="click to ' + (folded ? "expand" : "collapse") + '">';
+			html += '<span class="caret">' + (folded ? "▸" : "▾") + "</span>";
+			html += '<span class="title">Preset ' + (pi + 1) + "</span>";
+			html += '<span class="small muted">' + (pi < 4 ? "red LED " + (pi + 1) : "unused by the demo") + "</span>";
+			if(folded) {
+				html += '<span class="small muted ellipsis">' + (preset.list.length ? esc(preset.list.map((s) => s.effect).join(" → ")) : "empty") + "</span>";
+			}
+			html += '<span style="flex:1"></span>';
+			html += btn("presetup", ["presets", pi], "▲") + btn("presetdown", ["presets", pi], "▼");
+			html += btn("presetdup", ["presets", pi], "duplicate") + btn("presetrm", ["presets", pi], "delete", "del");
+			html += "</div>";
+			if(folded) {
+				html += "</div>";
+				return;
+			}
+			html += "<div class='body'>";
+			// named blocks
+			html += renderNamedBlocks(["presets", pi], preset.blocks);
+			// effect chain
+			html += renderEffectChain(["presets", pi], "list", preset.list, "mic");
+			html += "</div></div>";
+		});
+		html += '<div class="row"><button data-action="presetadd">+ add preset</button>' + '<span style="flex:1"></span>' + (resetBackup ? '<button data-action="undoreset" title="put back the config that ' + '&quot;reset to example&quot; replaced">undo reset</button>' : "") + '<button data-action="reset">reset to example</button></div>';
+		html += '<h2 style="font-size:14px;margin:18px 0 10px">Wav samples</h2>';
+		html += '<p class="small muted" style="margin:-4px 0 10px">One per white LED, walked with the MIDDLE ' + 'button and played back with BOTTOM. Like a preset, a sample can define its own shared ' + 'blocks and also has <code>$handle</code> available.</p>';
+		state.samples.forEach((sample, si) => {
+			const folded = !!sample[COLLAPSED];
+			html += '<div class="card' + (folded ? " folded" : "") + '">';
+			html += '<div class="head collapsible" data-collapse data-path=\'' + p2a(["samples", si]) + '\' title="click to ' + (folded ? "expand" : "collapse") + '">';
+			html += '<span class="caret">' + (folded ? "▸" : "▾") + "</span>";
+			html += '<span class="title">Sample ' + (si + 1) + "</span>";
+			html += '<span class="small muted">' + (si < MAX_SAMPLES ? "white LED " + (si + 1) : "unused by the demo") + "</span>";
+			if(folded) {
+				html += '<span class="small muted ellipsis">' + esc(sample.file || "(no file)") + ", " + esc(sample.playmode) + "</span>";
+			}
+			html += '<span style="flex:1"></span>';
+			html += btn("sampleup", ["samples", si], "▲") + btn("sampledown", ["samples", si], "▼");
+			html += btn("sampledup", ["samples", si], "duplicate") + btn("samplerm", ["samples", si], "delete", "del");
+			html += "</div>";
+			if(folded) {
+				html += "</div>";
+				return;
+			}
+			html += "<div class='body'>";
+			html += '<div class="row"><label class="pname">file</label>' + '<input type="text" style="min-width:14em" data-path=\'' + p2a(["samples", si, "file"]) + '\' data-vtype="text" value="' + esc(sample.file || "") + '" placeholder="1.wav">' + '<span class="hint">relative to CIRCUITPY, no leading slash</span></div>';
+			html += '<div class="row"><label class="pname">playmode</label>' + selectHTML(["samples", si, "playmode"], sample.playmode, PLAYMODES, 'data-vtype="text" data-action="playmode"') + '<span class="hint">' + (sample.playmode === "hold" ? "loops while BOTTOM is held" : sample.playmode === "startstop" ? "BOTTOM toggles looping on/off" : "plays through once per BOTTOM press") + "</span></div>";
+			// named blocks
+			html += renderNamedBlocks(["samples", si], sample.blocks);
+			html += renderEffectChain(["samples", si], "effects", sample.effects, "wave");
+			html += "</div></div>";
+		});
+		html += '<div class="row">' + btn("sampleadd", [], "+ add sample") + "</div>";
+		document.getElementById("editor").innerHTML = html;
+		if(focusKey) {
+			for(const el of document.querySelectorAll("[data-path]")) {
+				const key = el.dataset.path + "|" + (el.dataset.action || "") + "|" + el.tagName;
+				if(key === focusKey) {
+					el.focus();
+					if(caret && el.setSelectionRange) {
+						try {
+							el.setSelectionRange(caret[0], caret[1]);
+						} catch(e) {}
+					}
+					break;
+				}
+			}
+		}
+		renderJSON();
+	}
+
+	function renderJSON() {
+		const text = formatJSON(serialize()) + "\n";
+		document.getElementById("json").textContent = text;
+		autosave(text);
+		const issues = validate();
+		document.getElementById("issues").innerHTML = issues.length ? issues.map((i) => '<div class="issue">⚠ ' + esc(i) + "</div>").join("") : '<div class="ok">✓ no problems found</div>';
+	}
+	/* ------------------------------------------------------------------ *
+	 * Events
+	 * ------------------------------------------------------------------ */
+	function pathOf(el) {
+		return JSON.parse(el.dataset.path);
+	}
+
+	function coerce(el, raw) {
+		switch(el.dataset.vtype) {
+			case "int":
+				{
+					const n = parseInt(raw, 10);
+					return Number.isFinite(n) ? n : 0;
+				}
+			case "float":
+				{
+					const n = parseFloat(raw);
+					return Number.isFinite(n) ? n : 0;
+				}
+			case "bool":
+				return el.checked;
+			case "intlist":
+				return raw.split(/[,\s]+/).filter(Boolean).map((s) => parseInt(s, 10) || 0);
+			default:
+				return raw;
+		}
+	}
+	document.addEventListener("input", (event) => {
+		const el = event.target;
+		if(!el.dataset || !el.dataset.path) return;
+		const action = el.dataset.action;
+		const path = pathOf(el);
+		if(action === "blockrename") return; // handled on change
+		if(action === "wavesize" || action === "waveshape") return;
+		if(!action || action === undefined || ["blockkind", "fxadd", "toggleparam", "tappair"].indexOf(action) === -1) {
+			setAt(path, coerce(el, el.value));
+			renderJSON();
+		}
+	});
+	document.addEventListener("change", (event) => {
+		const el = event.target;
+		if(!el.dataset || (!el.dataset.action && !el.dataset.path)) return;
+		const action = el.dataset.action;
+		if(!action) {
+			if(el.dataset.vtype === "bool") {
+				setAt(pathOf(el), el.checked);
+				render();
+			} else if(el.tagName === "SELECT") {
+				setAt(pathOf(el), coerce(el, el.value));
+				renderJSON();
+			}
+			return;
+		}
+		const path = pathOf(el);
+		if(action === "blockkind") {
+			const blocksOwner = (path[0] === "presets" || path[0] === "samples") ? [path[0], path[1]] : null;
+			const defaults = {
+				none: null,
+				const: 0,
+				ref: "$" + (refNames(blocksOwner)[0] || "handle"),
+				lfo: {
+					block: "lfo",
+					waveform: "sine",
+					rate: 0.25,
+					scale: 1.0,
+					offset: 0.0
+				},
+				math: {
+					block: "math",
+					operation: "SUM",
+					a: 0.0,
+					b: 0.0
+				},
+			};
+			setAt(path, defaults[el.value]);
+			render();
+		} else if(action === "blocktype") {
+			// Switching a named block's type resets it to that type's defaults --
+			// an LFO and a Math block share no parameters worth carrying over.
+			if(blockKind(getAt(path)) !== el.value) setAt(path, clone(NEW_NAMED_BLOCK[el.value]));
+			render();
+		} else if(action === "toggleparam") {
+			if(el.checked) setAt(path, JSON.parse(el.dataset.def));
+			else deleteAt(path);
+			render();
+		} else if(action === "fxadd") {
+			if(!el.value) return;
+			const info = EFFECTS[el.value];
+			const spec = {
+				effect: el.value
+			};
+			info.params.forEach((meta) => {
+				spec[meta.name] = clone(meta.def);
+			});
+			getAt(path)[el.dataset.listkey || "list"].push(spec);
+			render();
+		} else if(action === "waveshape" || action === "wavesize") {
+			const current = getAt(path);
+			const shape = action === "waveshape" ? el.value : (current && typeof current === "object" ? current.shape : current);
+			let size = action === "wavesize" ? el.value : (current && typeof current === "object" ? current.size : undefined);
+			size = size === "" || size === undefined || size === null ? undefined : parseInt(size, 10);
+			setAt(path, size ? {
+				shape: shape,
+				size: size
+			} : shape);
+			render();
+		} else if(action === "tappair") {
+			const tap = getAt(path);
+			setAt(path, el.checked ? [Array.isArray(tap) ? tap[0] : tap, 1.0] : (Array.isArray(tap) ? tap[0] : tap));
+			render();
+		} else if(action === "playmode") {
+			setAt(path, coerce(el, el.value));
+			render();
+		} else if(action === "blockrename") {
+			const name = el.value.trim().replace(/[^A-Za-z0-9_]/g, "_");
+			const blocks = getAt(path.slice(0, -1));
+			const old = path[path.length - 1];
+			if(!name || name === old || blocks[name] !== undefined) {
+				render();
+				return;
+			}
+			const rebuilt = {};
+			for(const k of Object.keys(blocks)) rebuilt[k === old ? name : k] = blocks[k];
+			setAt(path.slice(0, -1), rebuilt);
+			// Repoint every "$old" reference in this preset or sample.
+			const retarget = (node) => {
+				if(Array.isArray(node)) node.forEach(retarget);
+				else if(node && typeof node === "object") {
+					for(const k of Object.keys(node)) {
+						if(node[k] === "$" + old) node[k] = "$" + name;
+						else retarget(node[k]);
+					}
+				}
+			};
+			retarget(state[path[0]][path[1]]);
+			render();
+		}
+	});
+	document.addEventListener("click", (event) => {
+		// A click anywhere on a title bar folds that pane, except on its controls.
+		const head = event.target.closest("[data-collapse]");
+		if(head && !event.target.closest("button, select, input, label, a")) {
+			const node = getAt(pathOf(head));
+			if(node[COLLAPSED]) delete node[COLLAPSED];
+			else node[COLLAPSED] = true;
+			render();
+			return;
+		}
+		const el = event.target.closest("[data-action]");
+		if(!el || el.tagName !== "BUTTON") return;
+		const action = el.dataset.action;
+		const path = el.dataset.path ? pathOf(el) : null;
+		const swap = (list, i, j) => {
+			if(j < 0 || j >= list.length) return;
+			const tmp = list[i];
+			list[i] = list[j];
+			list[j] = tmp;
+		};
+		if(action === "presetadd") {
+			state.presets.push({
+				blocks: {},
+				list: []
+			});
+		} else if(action === "collapseall" || action === "expandall") {
+			const fold = action === "collapseall";
+			const setFold = (node) => {
+				if(fold) node[COLLAPSED] = true;
+				else delete node[COLLAPSED];
+			};
+			const foldBlocks = (blocks) => Object.keys(blocks || {}).forEach((n) => setFold(blocks[n]));
+			state.presets.forEach((preset) => {
+				setFold(preset);
+				foldBlocks(preset.blocks);
+				preset.list.forEach(setFold);
+			});
+			state.samples.forEach((sample) => {
+				setFold(sample);
+				foldBlocks(sample.blocks);
+				sample.effects.forEach(setFold);
+			});
+		} else if(action === "sampleadd") {
+			state.samples.push({
+				file: "",
+				playmode: "oneshot",
+				blocks: {},
+				effects: []
+			});
+		} else if(action === "samplerm") {
+			if(!confirm("Delete sample " + (path[1] + 1) + "?")) return;
+			state.samples.splice(path[1], 1);
+		} else if(action === "sampledup") {
+			state.samples.splice(path[1] + 1, 0, clone(state.samples[path[1]]));
+		} else if(action === "sampleup") {
+			swap(state.samples, path[1], path[1] - 1);
+		} else if(action === "sampledown") {
+			swap(state.samples, path[1], path[1] + 1);
+		} else if(action === "reset") {
+			if(!confirm("Discard the current config and load the example?")) return;
+			// Stash what is being thrown away first, so "undo reset" can put it back.
+			// Resetting twice must not replace the real backup with the example.
+			const current = formatJSON(serialize()) + "\n";
+			const example = (() => {
+				const keep = state;
+				state = clone(DEFAULT_STATE);
+				const text = formatJSON(serialize()) + "\n";
+				state = keep;
+				return text;
+			})();
+			if(current !== example) setResetBackup(current);
+			state = clone(DEFAULT_STATE);
+			toast(resetBackup ? "Loaded the example — “undo reset” puts your config back" : "Loaded the example");
+		} else if(action === "undoreset") {
+			let restored;
+			try {
+				restored = adopt(JSON.parse(resetBackup), true);
+			} catch(e) {
+				setResetBackup(null);
+				toast("Could not restore that config");
+				render();
+				return;
+			}
+			state = restored;
+			setResetBackup(null);
+			document.getElementById("packName").value = state.name;
+			toast("Config restored");
+		} else if(action === "presetrm") {
+			if(!confirm("Delete preset " + (path[1] + 1) + "?")) return;
+			state.presets.splice(path[1], 1);
+		} else if(action === "presetdup") {
+			state.presets.splice(path[1] + 1, 0, clone(state.presets[path[1]]));
+		} else if(action === "presetup") {
+			swap(state.presets, path[1], path[1] - 1);
+		} else if(action === "presetdown") {
+			swap(state.presets, path[1], path[1] + 1);
+		} else if(action === "fxrm") {
+			getAt(path.slice(0, -1)).splice(path[3], 1);
+		} else if(action === "fxdup") {
+			getAt(path.slice(0, -1)).splice(path[3] + 1, 0, clone(getAt(path)));
+		} else if(action === "fxup") {
+			swap(getAt(path.slice(0, -1)), path[3], path[3] - 1);
+		} else if(action === "fxdown") {
+			swap(getAt(path.slice(0, -1)), path[3], path[3] + 1);
+		} else if(action === "blockadd") {
+			const owner = getAt(path);
+			if(!owner.blocks) owner.blocks = {};
+			const kind = el.dataset.kind === "math" ? "math" : "lfo";
+			let n = 1,
+				name = kind + "1";
+			while(owner.blocks[name] !== undefined) name = kind + ++n;
+			owner.blocks[name] = clone(NEW_NAMED_BLOCK[kind]);
+		} else if(action === "blockrm") {
+			deleteAt(path);
+		} else if(action === "bqadd") {
+			getAt(path).push({
+				mode: "low_pass",
+				frequency: 1000,
+				Q: 0.7071
+			});
+		} else if(action === "bqrm") {
+			getAt(path.slice(0, -1)).splice(path[path.length - 1], 1);
+		} else if(action === "tapadd") {
+			getAt(path).push(0.5);
+		} else if(action === "taprm") {
+			getAt(path.slice(0, -1)).splice(path[path.length - 1], 1);
+		} else {
+			return;
+		}
+		render();
+	});
+	document.getElementById("packName").addEventListener("input", (event) => {
+		state.name = event.target.value;
+		renderJSON();
+	});
+	/* ---- copy / download / import ---- */
+	function toast(text) {
+		const el = document.getElementById("toast");
+		el.textContent = text;
+		el.classList.add("show");
+		clearTimeout(toast.timer);
+		toast.timer = setTimeout(() => el.classList.remove("show"), 1600);
+	}
+
+	function copyJSON() {
+		const text = document.getElementById("json").textContent;
+		const fallback = () => {
+			const area = document.createElement("textarea");
+			area.value = text;
+			area.style.position = "fixed";
+			area.style.opacity = "0";
+			document.body.appendChild(area);
+			area.select();
+			let ok = false;
+			try {
+				ok = document.execCommand("copy");
+			} catch(e) {
+				ok = false;
+			}
+			document.body.removeChild(area);
+			toast(ok ? "Config copied to the clipboard" : "Copy failed — select the JSON and copy manually");
+		};
+		if(navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(text).then(() => toast("Config copied to the clipboard"), fallback);
+		} else {
+			fallback();
+		}
+	}
+	document.getElementById("btnCopy").addEventListener("click", copyJSON);
+	document.getElementById("btnCopy2").addEventListener("click", copyJSON);
+	document.getElementById("btnDownload").addEventListener("click", () => {
+		const blob = new Blob([document.getElementById("json").textContent], {
+			type: "application/json"
+		});
+		const a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = "config.json";
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+	});
+	// Bring an imported config into the shape the editor edits: every preset a
+	// {blocks, list} dict, every filter a list of biquads.
+	function adoptEffectList(list, where) {
+		if(!Array.isArray(list)) throw new Error(where + " has no effect list");
+		return list.map((spec) => {
+			const out = clone(spec);
+			if(out.filter !== undefined && !Array.isArray(out.filter)) out.filter = [out.filter];
+			return out;
+		});
+	}
+	// `lenient` is for the autosave restore: a half-finished sample whose file box
+	// is still empty must round-trip, where an imported config must not.
+	function adopt(config, lenient) {
+		if(!config || typeof config !== "object") throw new Error("not a JSON object");
+		const presets = config.presets;
+		if(!Array.isArray(presets)) throw new Error('no "presets" list');
+		const samples = config.samples;
+		if(samples !== undefined && !Array.isArray(samples)) throw new Error('"samples" must be a list');
+		return {
+			name: typeof config.name === "string" ? config.name : "TESTPACK",
+			presets: presets.map((preset, i) => {
+				const list = Array.isArray(preset) ? preset : preset.list;
+				return {
+					blocks: (!Array.isArray(preset) && preset.blocks) || {},
+					list: adoptEffectList(list, "preset " + (i + 1)),
+				};
+			}),
+			samples: (samples || []).map((sample, i) => {
+				if(!sample || typeof sample !== "object") throw new Error("sample " + (i + 1) + " must be a dict");
+				if(typeof sample.file !== "string" || !sample.file) {
+					if(!lenient) throw new Error("sample " + (i + 1) + " needs a file");
+					sample = Object.assign({}, sample, {
+						file: ""
+					});
+				}
+				const playmode = PLAYMODES.includes(sample.playmode) ? sample.playmode : "oneshot";
+				return {
+					file: sample.file,
+					playmode: playmode,
+					blocks: (sample.blocks && typeof sample.blocks === "object") ? clone(sample.blocks) : {},
+					effects: adoptEffectList(sample.effects || [], "sample " + (i + 1)),
+				};
+			}),
+		};
+	}
+	const dlg = document.getElementById("importDlg");
+	document.getElementById("btnImport").addEventListener("click", () => {
+		document.getElementById("importErr").textContent = "";
+		document.getElementById("importText").value = "";
+		dlg.showModal();
+	});
+	document.getElementById("importOk").addEventListener("click", () => {
+		const err = document.getElementById("importErr");
+		try {
+			state = adopt(JSON.parse(document.getElementById("importText").value));
+		} catch(e) {
+			err.textContent = "Could not load that config: " + e.message;
+			return;
+		}
+		document.getElementById("packName").value = state.name;
+		dlg.close();
+		render();
+		toast("Config loaded");
+	});
+	document.getElementById("importFile").addEventListener("change", (event) => {
+		const file = event.target.files[0];
+		if(!file) return;
+		file.text().then((text) => {
+			document.getElementById("importText").value = text;
+		});
+	});
+	/* ---- autosave ---- */
+	// Every edit writes the current config.json to localStorage and a reload picks
+	// it back up, so closing the tab mid-edit does not throw the work away. What is
+	// stored is the device-shaped JSON rather than the editor's state, so which
+	// panes were folded shut is not carried across a reload.
+	const AUTOSAVE_KEY = "ep2350-config-editor";
+	// The config "reset to example" replaced, kept until it is undone so that a
+	// mis-click is recoverable even after a reload.
+	const RESET_BACKUP_KEY = "ep2350-config-editor-prereset";
+
+	function setResetBackup(text) {
+		resetBackup = text;
+		try {
+			if(text) localStorage.setItem(RESET_BACKUP_KEY, text);
+			else localStorage.removeItem(RESET_BACKUP_KEY);
+		} catch(e) {}
+	}
+
+	function autosave(text) {
+		// Private mode, a full quota or a locked-down file:// origin all throw here;
+		// none of them should stop the editor working.
+		try {
+			localStorage.setItem(AUTOSAVE_KEY, text);
+		} catch(e) {}
+	}
+
+	function restoreAutosave() {
+		let text = null;
+		try {
+			text = localStorage.getItem(AUTOSAVE_KEY);
+		} catch(e) {
+			return false;
+		}
+		if(!text) return false;
+		try {
+			state = adopt(JSON.parse(text), true);
+		} catch(e) {
+			return false; // stale or corrupt -- start from the example
+		}
+		document.getElementById("packName").value = state.name;
+		return true;
+	}
+	try {
+		resetBackup = localStorage.getItem(RESET_BACKUP_KEY);
+	} catch(e) {}
+	const restored = restoreAutosave();
+	render();
+	if(restored) toast("Restored your last config");
+	</script>
+</body>
+</html>
