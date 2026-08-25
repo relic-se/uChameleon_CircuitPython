@@ -62,21 +62,21 @@ class uChameleon:
             frequency=44100*2,
         )
 
-        _pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
-        _pin_btn0.switch_to_input(pull=digitalio.Pull.UP)
-        self._left_button = Button(_pin_btn0)
+        self._pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
+        self._pin_btn0.switch_to_input(pull=digitalio.Pull.UP)
+        self._left_button = Button(self._pin_btn0)
 
-        _pin_btn1 = digitalio.DigitalInOut(_PIN_BTN1)
-        _pin_btn1.switch_to_input(pull=digitalio.Pull.UP)
-        self._right_button = Button(_pin_btn1)
+        self._pin_btn1 = digitalio.DigitalInOut(_PIN_BTN1)
+        self._pin_btn1.switch_to_input(pull=digitalio.Pull.UP)
+        self._right_button = Button(self._pin_btn1)
 
-        _pin_sw0 = digitalio.DigitalInOut(_PIN_SW0)
-        _pin_sw0.switch_to_input(pull=digitalio.Pull.UP)
-        self._left_switch = Debouncer(_pin_sw0)
+        self._pin_sw0 = digitalio.DigitalInOut(_PIN_SW0)
+        self._pin_sw0.switch_to_input(pull=digitalio.Pull.UP)
+        self._left_switch = Debouncer(self._pin_sw0)
 
-        _pin_sw1 = digitalio.DigitalInOut(_PIN_SW1)
-        _pin_sw1.switch_to_input(pull=digitalio.Pull.UP)
-        self._right_switch = Debouncer(_pin_sw1)
+        self._pin_sw1 = digitalio.DigitalInOut(_PIN_SW1)
+        self._pin_sw1.switch_to_input(pull=digitalio.Pull.UP)
+        self._right_switch = Debouncer(self._pin_sw1)
 
         self._pots = (
             AnalogIn(_PIN_POT0),
@@ -209,6 +209,49 @@ class uChameleon:
         else:
             self._pin_bypass.value = not self._bypass
             self._bypass_changed = False
+
+    def deinit(self) -> None:
+        self._pin_bypass.deinit()
+        self._pin_bypass = None
+
+        self._codec.reset()
+        self._codec = None
+        
+        if not self.usb_connected:
+            self._audio_out.stop()
+            self._audio_out.deinit()
+
+        else:
+            self._usb_mixer.stop_voice()
+            self._usb_mixer.deinit()
+            self._usb_mixer = None
+
+        self._audio_in.deinit()
+        self._audio_in = None
+
+        for x in self._pots:
+            x.deinit()
+        self._pots = None
+
+        self._left_button = None
+        self._pin_btn0.deinit()
+        self._pin_btn0 = None
+
+        self._right_button = None
+        self._pin_btn1.deinit()
+        self._pin_btn1 = None
+
+        self._left_switch = None
+        self._pin_sw0.deinit()
+        self._pin_sw0 = None
+
+        self._right_switch = None
+        self._pin_sw1.deinit()
+        self._pin_sw1 = None
+
+        self._led.duty_cycle = 0
+        self._led.deinit()
+        self._led = None
 
     @property
     def usb_connected(self) -> bool:
