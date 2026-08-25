@@ -15,14 +15,19 @@ _programs = None
 
 def _save(value: str) -> None:
     try:
-        import cptoml
         import storage
+        import toml
     except ImportError:
         pass
     else:
         try:
             storage.remount("/", readonly=False)
-            cptoml.put(KEY, value)
+            with open("/settings.toml", "r+") as f:
+                data = toml.load(f)
+                data[KEY] = value
+                f.seek(0)
+                toml.dump(data, f)
+                f.truncate()
             storage.remount("/", readonly=True)
         except RuntimeError:
             pass

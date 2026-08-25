@@ -2,3 +2,4 @@ adafruit_debouncer
 relic_tlv320aic3204
 relic_waveform
 synthtools
+toml
