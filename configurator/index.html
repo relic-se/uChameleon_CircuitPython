@@ -389,7 +389,7 @@ SPDX-License-Identifier: MIT
 				<div class="body">
 					<div id="json" tabindex="0"></div>
 					<div id="issues"></div>
-					<p class="small muted" style="margin:10px 0 0"> Copy this and save it to <code>CIRCUITPY/config.json</code>. The demo uses the first four presets, one per red LED; spot 0 is the clean passthrough. It also uses the first four samples, one per white LED, walked with MIDDLE and played with BOTTOM. <code>$handle</code> is supplied by the demo to preset effects only: 0.0 handle out, 1.0 squeezed in. </p>
+					<p class="small muted" style="margin:10px 0 0">Copy this and save it to <code>CIRCUITPY/config.json</code></p>
 				</div>
 			</div>
 		</div>
@@ -862,7 +862,7 @@ SPDX-License-Identifier: MIT
 					operation: "constrained_lerp",
 					a: -12,
 					b: 12,
-					c: "$handle"
+					c: "$mod0"
 				},
 				mix: 1.0,
 				window: 1024,
@@ -940,17 +940,6 @@ SPDX-License-Identifier: MIT
 			p.list = serializeEffectList(preset.list);
 			out.presets.push(p);
 		}
-		if(state.samples && state.samples.length) {
-			out.samples = state.samples.map((sample) => {
-				const s = {
-					file: sample.file,
-					playmode: sample.playmode
-				};
-				if(sample.blocks && Object.keys(sample.blocks).length) s.blocks = serializeBlocks(sample.blocks);
-				if(sample.effects && sample.effects.length) s.effects = serializeEffectList(sample.effects);
-				return s;
-			});
-		}
 		return out;
 	}
 	// Pretty-print, but keep the small leaf objects (blocks, biquads, taps) on one
@@ -972,7 +961,7 @@ SPDX-License-Identifier: MIT
 	/* ------------------------------------------------------------------ *
 	 * Validation
 	 * ------------------------------------------------------------------ */
-	const HOST_BLOCKS = ["handle"];
+	const HOST_BLOCKS = ["mod0", "mod1", "mod2", "sw0", "sw1", "btn0"];
 
 	function validate() {
 		const issues = [];
@@ -1000,48 +989,6 @@ SPDX-License-Identifier: MIT
 			};
 			Object.keys(preset.blocks || {}).forEach((n) => walk(preset.blocks[n], "block $" + n));
 			preset.list.forEach((spec, ei) => {
-				const label = "effect " + (ei + 1) + " (" + spec.effect + ")";
-				for(const k of Object.keys(spec))
-					if(k !== "effect") walk(spec[k], label + " " + k);
-				if(spec.effect === "filter") {
-					const list = Array.isArray(spec.filter) ? spec.filter : [spec.filter];
-					if(!list.length || !list[0]) issues.push(where + ": " + label + " needs at least one biquad.");
-					list.forEach((f) => {
-						if(f && f.frequency === undefined) issues.push(where + ": " + label + " biquad needs a frequency.");
-					});
-				}
-				const maxd = spec.max_delay_ms,
-					d = spec.delay_ms;
-				if(typeof maxd === "number" && typeof d === "number" && d > maxd) {
-					issues.push(where + ": " + label + " delay_ms (" + d + ") is longer than max_delay_ms (" + maxd + ").");
-				}
-			});
-		});
-		if(state.samples.length > MAX_SAMPLES) {
-			issues.push("The demo only uses the first " + MAX_SAMPLES + " samples (one per white LED); " + (state.samples.length - MAX_SAMPLES) + " will be ignored.");
-		}
-		state.samples.forEach((sample, si) => {
-			const where = "sample " + (si + 1);
-			if(!sample.file) issues.push(where + " needs a wave file name.");
-			// build_sample_chain() in code_ep2350_demo_v2.py builds sample effects
-			// via create_effects({"list": ..., "blocks": sample["blocks"]},
-			// blocks={"handle": handle_control}, ...), so a sample's own "blocks"
-			// mapping plus $handle are both available -- same namespace rules as a
-			// preset (see the "preset" validation above).
-			const known = new Set(HOST_BLOCKS.concat(Object.keys(sample.blocks || {})));
-			const walk = (value, label) => {
-				if(typeof value === "string" && value.startsWith("$")) {
-					const key = value.slice(1);
-					if(!key) issues.push(where + ": " + label + " has an empty $ reference.");
-					else if(!known.has(key)) issues.push(where + ": " + label + ' refers to undefined block "$' + key + '".');
-				} else if(Array.isArray(value)) {
-					value.forEach((v) => walk(v, label));
-				} else if(value && typeof value === "object") {
-					for(const k of Object.keys(value)) walk(value[k], label);
-				}
-			};
-			Object.keys(sample.blocks || {}).forEach((n) => walk(sample.blocks[n], "block $" + n));
-			sample.effects.forEach((spec, ei) => {
 				const label = "effect " + (ei + 1) + " (" + spec.effect + ")";
 				for(const k of Object.keys(spec))
 					if(k !== "effect") walk(spec[k], label + " " + k);
@@ -1118,9 +1065,7 @@ SPDX-License-Identifier: MIT
 	// `blocksOwner` is the path (e.g. ["presets", pi] or ["samples", si]) to the
 	// preset or sample whose "blocks" mapping block-input params may reference,
 	// or `null`/`undefined` where there is no such owner (e.g. within a block's
-	// own definition) -- in which case only the host-supplied blocks (currently
-	// just $handle, see build_sample_chain()/build() in code_ep2350_demo_v2.py)
-	// are offered.
+	// own definition) -- in which case only the host-supplied blocks are offered.
 	function refNames(blocksOwner) {
 		if(!blocksOwner) return HOST_BLOCKS.slice();
 		const owner = getAt(blocksOwner);
@@ -1317,7 +1262,7 @@ SPDX-License-Identifier: MIT
 			}
 			html += '<div class="body">' + paramRows(block, bp, kind === "math" ? MATH_PARAMS : LFO_PARAMS, ownerPath) + "</div></div>";
 		});
-		if(!names.length) html += '<div class="row hint">none — parameters can still use <code>$handle</code>.</div>';
+		if(!names.length) html += '<div class="row hint">none — parameters can still use <code>$mod0</code>, etc.</div>';
 		html += "</div>";
 		return html;
 	}
@@ -1411,35 +1356,6 @@ SPDX-License-Identifier: MIT
 			html += "</div></div>";
 		});
 		html += '<div class="row"><button data-action="presetadd">+ add preset</button>' + '<span style="flex:1"></span>' + (resetBackup ? '<button data-action="undoreset" title="put back the config that ' + '&quot;reset to example&quot; replaced">undo reset</button>' : "") + '<button data-action="reset">reset to example</button></div>';
-		html += '<h2 style="font-size:14px;margin:18px 0 10px">Wav samples</h2>';
-		html += '<p class="small muted" style="margin:-4px 0 10px">One per white LED, walked with the MIDDLE ' + 'button and played back with BOTTOM. Like a preset, a sample can define its own shared ' + 'blocks and also has <code>$handle</code> available.</p>';
-		state.samples.forEach((sample, si) => {
-			const folded = !!sample[COLLAPSED];
-			html += '<div class="card' + (folded ? " folded" : "") + '">';
-			html += '<div class="head collapsible" data-collapse data-path=\'' + p2a(["samples", si]) + '\' title="click to ' + (folded ? "expand" : "collapse") + '">';
-			html += '<span class="caret">' + (folded ? "▸" : "▾") + "</span>";
-			html += '<span class="title">Sample ' + (si + 1) + "</span>";
-			html += '<span class="small muted">' + (si < MAX_SAMPLES ? "white LED " + (si + 1) : "unused by the demo") + "</span>";
-			if(folded) {
-				html += '<span class="small muted ellipsis">' + esc(sample.file || "(no file)") + ", " + esc(sample.playmode) + "</span>";
-			}
-			html += '<span style="flex:1"></span>';
-			html += btn("sampleup", ["samples", si], "▲") + btn("sampledown", ["samples", si], "▼");
-			html += btn("sampledup", ["samples", si], "duplicate") + btn("samplerm", ["samples", si], "delete", "del");
-			html += "</div>";
-			if(folded) {
-				html += "</div>";
-				return;
-			}
-			html += "<div class='body'>";
-			html += '<div class="row"><label class="pname">file</label>' + '<input type="text" style="min-width:14em" data-path=\'' + p2a(["samples", si, "file"]) + '\' data-vtype="text" value="' + esc(sample.file || "") + '" placeholder="1.wav">' + '<span class="hint">relative to CIRCUITPY, no leading slash</span></div>';
-			html += '<div class="row"><label class="pname">playmode</label>' + selectHTML(["samples", si, "playmode"], sample.playmode, PLAYMODES, 'data-vtype="text" data-action="playmode"') + '<span class="hint">' + (sample.playmode === "hold" ? "loops while BOTTOM is held" : sample.playmode === "startstop" ? "BOTTOM toggles looping on/off" : "plays through once per BOTTOM press") + "</span></div>";
-			// named blocks
-			html += renderNamedBlocks(["samples", si], sample.blocks);
-			html += renderEffectChain(["samples", si], "effects", sample.effects, "wave");
-			html += "</div></div>";
-		});
-		html += '<div class="row">' + btn("sampleadd", [], "+ add sample") + "</div>";
 		document.getElementById("editor").innerHTML = html;
 		if(focusKey) {
 			for(const el of document.querySelectorAll("[data-path]")) {
@@ -1524,7 +1440,7 @@ SPDX-License-Identifier: MIT
 			const defaults = {
 				none: null,
 				const: 0,
-				ref: "$" + (refNames(blocksOwner)[0] || "handle"),
+				ref: "$" + (refNames(blocksOwner)[0] || "mod0"),
 				lfo: {
 					block: "lfo",
 					waveform: "sine",
@@ -1640,27 +1556,6 @@ SPDX-License-Identifier: MIT
 				foldBlocks(preset.blocks);
 				preset.list.forEach(setFold);
 			});
-			state.samples.forEach((sample) => {
-				setFold(sample);
-				foldBlocks(sample.blocks);
-				sample.effects.forEach(setFold);
-			});
-		} else if(action === "sampleadd") {
-			state.samples.push({
-				file: "",
-				playmode: "oneshot",
-				blocks: {},
-				effects: []
-			});
-		} else if(action === "samplerm") {
-			if(!confirm("Delete sample " + (path[1] + 1) + "?")) return;
-			state.samples.splice(path[1], 1);
-		} else if(action === "sampledup") {
-			state.samples.splice(path[1] + 1, 0, clone(state.samples[path[1]]));
-		} else if(action === "sampleup") {
-			swap(state.samples, path[1], path[1] - 1);
-		} else if(action === "sampledown") {
-			swap(state.samples, path[1], path[1] + 1);
 		} else if(action === "reset") {
 			if(!confirm("Discard the current config and load the example?")) return;
 			// Stash what is being thrown away first, so "undo reset" can put it back.

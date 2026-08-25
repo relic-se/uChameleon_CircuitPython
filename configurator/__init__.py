@@ -1,726 +1,652 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Tim Cocks for Adafruit Industries
-# SPDX-FileCopyrightText: Copyright (c) 2026 Cooper Dalrymple (@relic-se)
 #
 # SPDX-License-Identifier: MIT
 """
-EP-2350 CircuitPython Demo: mic -> headphone passthrough with JSON-configured effect chains.
+Build CircuitPython audio effect objects from JSON config data.
 
-Up to four presets are used (one per red LED). Only one chain exists at a time:
-switching tears the old chain down and builds the new one.
+The JSON describes only the end-user tunable parameters of an effect -- the
+things that change how it sounds. The audio format arguments are
+a property of the audio chain, not of the preset, so they are supplied by the
+caller and ignored if they appear in the JSON.
 
-Controls:
+A single effect is a dict with an ``"effect"`` key naming the type::
 
-* TOP side button -- steps to the next spot in the preset cycle. The cycle is the
-                     configured presets plus a "clean" spot with no effects at
-                     all, where the mic feeds the output directly.
-* Handle          -- gates the mic output. It starts muted; the DAC un-mutes
-                     while the paddle is squeezed and mutes again on release.
-* Volume knob     -- sets the DAC digital volume, continuously. Fully anti-
-                     clockwise is silence.
-* Handle travel   -- offered to the presets, and to a sample's own effects
-                     chain, as the block ``"$handle"``, 0.0 with the handle out
-                     to 1.0 squeezed in. A preset or sample that does not
-                     mention it ignores the handle entirely.
+    {"effect": "echo", "max_delay_ms": 1000, "delay_ms": 500,
+     "decay": 0.5, "mix": 1.0, "freq_shift": false}
 
-* MIDDLE side button -- steps to the next spot in the list of wave samples. the
-                        current position in the list is indicated by the white
-                        LEDs.
-* BOTTOM side button -- plays the current sample wave file with any effects
-                        configured for it.
-* TOP + MIDDLE, held together for 500ms -- shuts the unit down by driving
-                        POWER_HOLD low.
+Any effect may also carry ``"enabled": false`` to take it out of the chain
+without deleting it from the config -- `create_effect_chain` and
+`create_effects` skip it entirely. Omitting ``"enabled"`` (or setting it
+``true``) builds the effect as normal.
 
-Indication:
+Usage::
 
-* Top four red LEDs, one per preset: the lit one is the active preset. On the
-  clean spot they are all dark.
+    import json
+    from config_loader import create_effect, create_effect_chain
 
-* Bottom four white LEDs, one per sample: the lit one is the currently selected
-  sample.
+    config = json.load(open("/ep2350_circuitpython_config.json"))
+    specs = config["presets"][0]["list"]
+
+    chain = create_effect_chain(specs, sample_rate=48000, channel_count=2,
+                                buffer_size=1024, source=mic)
+    audio.play(chain[-1])
+
+Block inputs
+------------
+
+Most tunable parameters are `synthio.BlockInput`, meaning they take a constant
+*or* a block that varies over time. Anywhere a block is allowed the JSON may be:
+
+* a number -- ``"mix": 0.6``
+* ``null`` -- treated by synthio as 0
+* a block object -- ``{"block": "lfo", ...}`` or ``{"block": "math", ...}``
+* ``"$name"`` -- a reference to a shared block (see below)
+
+An LFO takes the same keyword arguments as `synthio.LFO`::
+
+    {"block": "lfo", "waveform": "sine", "rate": 0.25,
+     "scale": 400, "offset": 600, "phase_offset": 0.0,
+     "once": false, "interpolate": true}
+
+``waveform`` is a shape name (``"triangle"``, ``"sine"``, ``"square"``,
+``"saw"``/``"ramp_up"``, ``"ramp_down"``), ``{"shape": "sine", "size": 256}``
+when the sample count matters, or a literal list of 16-bit signed ints.
+Omitting it uses synthio's built-in triangle.
+
+A Math block takes an operation name from `synthio.MathOperation`::
+
+    {"block": "math", "operation": "constrained_lerp",
+     "a": 0.1, "b": 0.9, "c": "$handle"}
+
+``rate``/``scale``/``offset``/``phase_offset`` and ``a``/``b``/``c`` are block
+inputs themselves, so blocks nest.
+
+Writing the same block object twice builds two independent blocks. To drive
+several parameters from one block, name it and refer to it with ``"$name"``.
+Names come from a ``"blocks"`` mapping on the preset (or the whole config)::
+
+    {"blocks": {"sweep": {"block": "lfo", "rate": 0.2,
+                          "scale": 1200, "offset": 2000}},
+     "list": [{"effect": "filter",
+               "filter": {"mode": "low_pass", "frequency": "$sweep"}},
+              {"effect": "phaser", "frequency": "$sweep", "stages": 8}]}
+
+and from the ``blocks`` argument of `create_effect`, which is how host code
+hands the config a value only it can produce -- a knob, say::
+
+    handle = synthio.Math(synthio.MathOperation.SUM, 0.0, 0.0, 0.0)
+    chain = create_preset(preset, source=mic, blocks={"handle": handle})
+    ...
+    handle.a = pot.value / 65535     # in the main loop
+
+Host-supplied blocks win over same-named definitions in the config.
 """
 
-import gc
-import json
-import time
+import array
+import math
 
-import analogio
-import audiobusio
-import audioi2sin
-import audiocore
-import audiomixer
-import board
-import digitalio
-import keypad
-
+import audiofilters
 import synthio
 
-import adafruit_nau88l21
-from config_loader import create_effects, load_samples
+# Audio format arguments. These are set by the caller from the hardware
+# configuration, so they are skipped if a config file specifies them.
+FORMAT_ARGS = (
+    "buffer_size",
+    "sample_rate",
+    "channel_count",
+    "bits_per_sample",
+    "samples_signed",
+)
 
-RATE = 16000  # frame rate on the wire; also what the codec's FLL expects
 
-# Where to look for the preset config
-CONFIG_PATHS = ("/config.json", "/ep2350_circuitpython_config.json")
+# Converters all take (value, name, blocks) so they are interchangeable in the
+# parameter tables; only the block-input ones look at `blocks`.
+# pylint: disable=unused-argument, too-many-locals
 
-MAX_PRESETS = 4
-MAX_SAMPLES = 4
 
-# How long TOP + MIDDLE must be held together, in seconds, to shut down.
-SHUTDOWN_HOLD_SECONDS = 0.8
+def _int(value, name, blocks=None):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("{} must be a number".format(name))
+    return int(value)
 
-# --- Hardware effects config ---
 
-# Analog mic gain, dB, -1 .. 36.
-MIC_GAIN = 14
-# ADC digital gain, dB.
-ADC_VOLUME = 0
-# Headphone analog volume, dB. Only 0/-3/-6/-9 exist.
-HEADPHONE_VOLUME = 0
+def _float(value, name, blocks=None):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("{} must be a number".format(name))
+    return float(value)
 
-# --- Volume knob ---
 
-# What the two ends of the knob's travel mean, as a DAC digital volume in dB.
-# The codec's own limits are -66 to +24; the top is kept well short of that.
-# Travel maps to dB linearly.
-VOLUME_MIN_DB = -50
-VOLUME_MAX_DB = 6
+def _bool(value, name, blocks=None):
+    if not isinstance(value, bool):
+        raise ValueError("{} must be true or false".format(name))
+    return value
 
-# Fraction of the travel at the anticlockwise end that means silence, so the
-# knob has a definite "off" rather than bottoming out at merely very quiet.
-VOLUME_OFF_FRACTION = 0.02
 
-# Volume knob smoothing for noisy signal
-VOLUME_DEADBAND = 700
+def _block(value, name, blocks=None):
+    """Convert one synthio.BlockInput parameter.
 
-# --- Handle position ---
+    A number stays a number, ``null`` becomes ``None`` (synthio reads it as 0),
+    a dict builds an `synthio.LFO` or `synthio.Math`, and ``"$name"`` looks up a
+    shared block.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("{} must be a number, block or block reference".format(name))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        if not value.startswith("$"):
+            raise ValueError(
+                '{} must be a number, a block, or a "$name" reference'.format(name)
+            )
+        return _as_blocks(blocks).get(value, name)
+    if isinstance(value, dict):
+        return _make_block(value, name, _as_blocks(blocks))
+    raise ValueError("{} must be a number, block or block reference".format(name))
 
-# The handle travel pot on GP28, in ADC counts at each end of its swing. The
-# whole range is only ~2520 counts of the 16-bit scale, so it has to be mapped
-# explicitly;
-HANDLE_OUT_COUNTS = 32370  # at rest, handle all the way out
-HANDLE_IN_COUNTS = 29850  # squeezed fully in
 
-# Handle position potentiometer smoothing for noisy signal
-HANDLE_SAMPLES = 16
-HANDLE_SMOOTHING = 0.25
+def _distortion_mode(value, name, blocks=None):
+    """Map "clip"/"LOFI"/... to an audiofilters.DistortionMode."""
 
-# DC-blocking high-pass corner, Hz. Applied in the codec's ADC path (see the
-# codec.configure_adc_highpass() call below)
-HPF_HZ = 120
+    if not isinstance(value, str):
+        raise ValueError("{} must be a string".format(name))
+    try:
+        return getattr(audiofilters.DistortionMode, value.upper())
+    except AttributeError as exc:
+        raise ValueError("unknown distortion mode: {}".format(value)) from exc
 
-# Audio format of the chain. Passed to every effect config_loader builds; the
-# JSON only describes the sound-affecting parameters, never the format ones.
-FORMAT = {
-    "buffer_size": 1024,
-    "sample_rate": RATE,
-    "bits_per_sample": 16,
-    "samples_signed": True,
-    "channel_count": 1,
+
+class _Blocks:
+    """The ``"$name"`` namespace for one chain build.
+
+    Holds the config's ``"blocks"`` definitions plus any ready-made blocks the
+    host passed in, and caches what it builds so that two parameters referring
+    to ``"$sweep"`` share one LFO instead of getting one each.
+    """
+
+    def __init__(self, definitions=None):
+        self._definitions = definitions or {}
+        self._built = {}
+        self._resolving = []
+
+    def get(self, ref, name):
+        """Resolve a ``"$name"`` reference to a block."""
+        key = ref[1:]
+        if not key:
+            raise ValueError("{} has an empty block reference".format(name))
+        if key in self._built:
+            return self._built[key]
+        if key not in self._definitions:
+            raise ValueError("{} refers to undefined block ${}".format(name, key))
+
+        definition = self._definitions[key]
+        if key in self._resolving:
+            raise ValueError("block ${} depends on itself".format(key))
+        self._resolving.append(key)
+        try:
+            if definition is None or isinstance(definition, (dict, float, int, str)):
+                block = _block(definition, "block ${}".format(key), self)
+            else:
+                # Already a synthio object, handed in by the host.
+                block = definition
+        finally:
+            self._resolving.pop()
+
+        self._built[key] = block
+        return block
+
+
+def _as_blocks(blocks):
+    if isinstance(blocks, _Blocks):
+        return blocks
+    return _Blocks(blocks)
+
+
+_WAVEFORM_SIZE = 64
+
+# Shape name -> waveform[i] for phase i/size, as a float in -1.0 to 1.0.
+_WAVEFORM_SHAPES = {
+    "triangle": lambda t: 4 * t if t < 0.25 else (2 - 4 * t if t < 0.75 else 4 * t - 4),
+    "square": lambda t: 1.0 if t < 0.5 else -1.0,
+    "saw": lambda t: 2 * t - 1,
+    "ramp_down": lambda t: 1 - 2 * t,
+}
+
+_WAVEFORM_ALIASES = {
+    "ramp_up": "saw",
+    "sawtooth": "saw",
+    "ramp": "saw",
+    "reverse_saw": "ramp_down",
 }
 
 
-# --- Mutable state container ---
+def _generate_waveform(shape, size, name):
+    if not isinstance(shape, str):
+        raise ValueError("{} shape must be a string".format(name))
+    if size < 2:
+        raise ValueError("{} needs at least 2 samples".format(name))
+
+    key = shape.lower().replace(" ", "_").replace("-", "_")
+    key = _WAVEFORM_ALIASES.get(key, key)
+
+    if key == "sine":
+        return array.array(
+            "h",
+            [int(32767 * math.sin(2 * math.pi * i / size)) for i in range(size)],
+        )
+    if key not in _WAVEFORM_SHAPES:
+        raise ValueError("unknown waveform shape: {}".format(shape))
+
+    point = _WAVEFORM_SHAPES[key]
+    return array.array("h", [int(32767 * point(i / size)) for i in range(size)])
 
 
-class DataContext:
-    """Holds all state that is reassigned inside functions.
+def _waveform(value, name, blocks=None):
+    """Build an LFO waveform buffer.
 
-    Keeping mutable state in one object removes the need for ``global``
-    declarations and makes the data dependencies of each function explicit.
+    A shape name, ``{"shape": ..., "size": ...}``, or a literal list of 16-bit
+    signed samples. ``None`` leaves synthio's built-in triangle in place.
     """
+    if value is None:
+        return None
 
-    def __init__(self):
-        # The effects making up the currently active preset, in signal-flow
-        # order. Empty on the clean spot.
-        self.chain = []
-        # Index into the cycle: 0 == clean, 1..len(PRESETS) == that preset.
-        self.active = 0
+    if isinstance(value, str):
+        return _generate_waveform(value, _WAVEFORM_SIZE, name)
 
-        # Active white LED, 1..4 (top to bottom).
-        self.white_active = 1
+    if isinstance(value, dict):
+        for key in value:
+            if key not in ("shape", "size"):
+                raise ValueError("{} has no parameter {}".format(name, key))
+        if "shape" not in value:
+            raise ValueError("{} requires a shape".format(name))
+        size = _WAVEFORM_SIZE
+        if "size" in value:
+            size = _int(value["size"], "{} size".format(name))
+        return _generate_waveform(value["shape"], size, name)
 
-        # WaveFile currently loaded,  ``None`` if there is no matching sample
-        # configured or its file could not be loaded.
-        self.current_wave = None
-        # Playmode of the active sample, one of config_loader.PLAYMODES.
-        # Stays "oneshot" (a no-op default) when there is no sample.
-        self.current_playmode = "oneshot"
-        # The sample's effect chain, built from its "effects" config (empty
-        # list if it has none), in signal-flow order.
-        self.current_effects = []
-        # What `play_current_wave_sample()` actually hands to
-        # `mixer.voice[1].play()`: `current_wave` itself if the sample has no
-        # effects, otherwise the last element of `current_effects`. ``None``
-        # when there is no sample loaded.
-        self.current_source = None
-        # True while `current_source` is looping on mixer voice 1 because of a
-        # "hold" or "startstop" press, tracked so a "startstop" press knows
-        # whether to start or stop, and so a LED switch mid-loop can clean up
-        # correctly.
-        self.wave_playing = False
+    if isinstance(value, (list, tuple)):
+        samples = []
+        for sample in value:
+            sample = _int(sample, "{} sample".format(name))
+            if not -32768 <= sample <= 32767:
+                raise ValueError("{} samples must be -32768 to 32767".format(name))
+            samples.append(sample)
+        if len(samples) < 2:
+            raise ValueError("{} needs at least 2 samples".format(name))
+        return array.array("h", samples)
 
-        # Whether TOP / MIDDLE are currently held down, for the shutdown combo.
-        self.top_held = False
-        self.middle_held = False
-        # the `time.monotonic()` the combo started, or None while it is not both-down.
-        self.combo_since = None
-
-        # Wiper position, in ADC counts, that `volume` was last computed from.
-        # Starts far enough outside the 16-bit range that the first poll always
-        # applies.
-        self.knob_applied = -1 << 20
-        # The dB the DAC volume was last set to, or None while the knob is at
-        # its off end.
-        self.volume = None
-
-        # True == paddle squeezed.
-        self.paddle_held = False
+    raise ValueError("{} must be a name, dict or list".format(name))
 
 
-# --- Preset config ---
+def _math_operation(value, name, blocks=None):
+    """Map "lerp"/"SCALE_OFFSET"/... to a synthio.MathOperation."""
 
-
-def load_config():
-    """Read and parse the JSON config file.
-
-    Tries `CONFIG_PATHS` in order; an unreadable or malformed file at a given
-    path is not fatal, it just moves on to the next one.
-
-    :return: The parsed config dict, or ``{}`` if none of the paths worked --
-        which leaves the demo with nothing but the clean spot in its preset
-        cycle and no samples to play.
-    """
-    for path in CONFIG_PATHS:
-        try:
-            with open(path, "r") as file:
-                return json.load(file)
-        except (OSError, ValueError) as error:
-            print("config {}: {}".format(path, error))
-    return {}
-
-
-CONFIG = load_config()
-PACK_NAME = CONFIG.get("name", "none")
-
-# Presets are passed to config_loader whole, since a preset is more than its
-# effect list: it may carry a "blocks" mapping of LFOs and Math blocks that
-# its effects refer to by name.
-PRESETS = list(CONFIG.get("presets", ())[:MAX_PRESETS])
-
-# One wave file per white LED slot, each with a playmode telling the BOTTOM
-# button how to play it back. See config_loader.load_samples().
-SAMPLES = load_samples(CONFIG, max_samples=MAX_SAMPLES)
-
-# --- Codec + audio bring-up ---
-
-# The internal clock mode I2S object has to exist first: it generates BCLK/WS,
-# and the external clock mode I2S object syncs to the WS edges it sees.
-# Constructing the internal clock one starts BCLK, which the codec's
-# FLL then has something to lock to.
-i2s = audiobusio.I2SOut(board.I2S_BIT_CLOCK, board.I2S_WS, board.I2S_DOUT)
-
-codec = adafruit_nau88l21.NAU88L21(board.I2C())
-codec.configure_clocks()
-
-# enable headphone output and set hardware volume. The DAC digital volume is
-# deliberately not set here, the knob owns it.
-codec.headphone_output = True
-codec.headphone_volume = HEADPHONE_VOLUME
-
-codec.configure_microphone_input(gain_db=MIC_GAIN)
-codec.adc_volume = ADC_VOLUME
-
-# Strip the microphone's DC offset and slow subsonic bias drift in the codec's
-# own ADC biquad, before it ever reaches the I2S bus.
-codec.configure_adc_highpass(frequency=HPF_HZ, sample_rate=RATE)
-
-mic = audioi2sin.I2SIn(
-    board.I2S_BIT_CLOCK,
-    board.I2S_WS,
-    board.I2S_DIN,
-    sample_rate=RATE,
-    bit_depth=16,
-    mono=True,
-    external_clock=True,
-)
-
-# Two-voice audio mixer sits between the sources and the I2S output.
-# Voice 0 carries the current mic/effects chain. Voice 1 carries the
-# wave file samples
-mixer = audiomixer.Mixer(
-    voice_count=2,
-    buffer_size=FORMAT["buffer_size"],
-    channel_count=FORMAT["channel_count"],
-    bits_per_sample=FORMAT["bits_per_sample"],
-    samples_signed=FORMAT["samples_signed"],
-    sample_rate=FORMAT["sample_rate"],
-)
-i2s.play(mixer, loop=True)
-
-# --- Chain switching ---
-
-
-def teardown(ctx):
-    """Stop the current voice, free the current chain's effects"""
-    mixer.voice[0].stop()
-    for _effect in ctx.chain:
-        _effect.deinit()
-    ctx.chain = []
-    gc.collect()
-
-
-def build(ctx, preset):
-    """Wire up ``preset`` as the live chain on mixer voice 0.
-
-    WIRING ORDER MATTERS. Work from the voice input backwards, so the call
-    that hands the mic to something is the LAST one:
-
-        mixer.voice[0].play(head) -> ... -> tail.play(mic)
-
-    The output side is the mixer itself, wired to I2SOut once at startup. That
-    means preset switching does not restart the clock source: it only replaces
-    the source feeding mixer voice 0. The clock follower I2SIn re-syncs when
-    something calls play() *on the mic* (or on an effect that eventually feeds
-    the mic); effects do not propagate reset_buffer(), so the mic must be wired
-    last.
-
-    :param ctx: The mutable state container.
-    :param preset: A preset from the config, or an empty one for the clean
-        spot, where the mic is played directly.
-    """
-    if not preset:
-        ctx.chain = []
-        mixer.voice[0].play(mic, loop=True)
-        return
-
-    # Build first: a config error or an out-of-memory here must not leave a
-    # half-wired graph running. create_effects() builds without wiring, which
-    # is what lets the wiring below run output-first.
-    ctx.chain = create_effects(preset, blocks={"handle": handle_control}, **FORMAT)
-    if not ctx.chain:
-        mixer.voice[0].play(mic, loop=True)
-        return
-
-    mixer.voice[0].play(ctx.chain[-1], loop=True)
-    for index in range(len(ctx.chain) - 1, 0, -1):
-        ctx.chain[index].play(ctx.chain[index - 1])
-    ctx.chain[0].play(mic)
-
-
-def select_preset(ctx, index):
-    """Make preset cycle position ``index`` the active chain.
-
-    The switch is done with the DAC soft-muted, since tearing the graph down
-    and back up puts a step in the output. A preset that fails to build (an
-    effect this firmware lacks, or one delay line too many for RAM) falls back
-    to the clean spot rather than taking the demo down.
-
-    :param ctx: The mutable state container.
-    :param index: The preset position to activate.
-    """
-    muted = codec.dac_soft_mute
-    codec.dac_soft_mute = True
-    teardown(ctx)
-
-    ctx.active = index
+    if not isinstance(value, str):
+        raise ValueError("{} must be a string".format(name))
+    key = value.replace(" ", "_").replace("-", "_").upper()
     try:
-        build(ctx, PRESETS[index - 1] if index else [])
-    except (ValueError, MemoryError) as error:
-        print("preset {} failed: {}".format(index, error))
-        teardown(ctx)
-        ctx.active = 0
-        build(ctx, [])
-
-    update_red_leds(ctx)
-    print(
-        "preset {} of {} ({} effects), {} bytes free".format(
-            ctx.active, len(PRESETS), len(ctx.chain), gc.mem_free()
-        )
-    )
-    codec.dac_soft_mute = muted
+        return getattr(synthio.MathOperation, key)
+    except AttributeError as exc:
+        raise ValueError("unknown math operation: {}".format(value)) from exc
 
 
-# --- Controls ---
-
-# The three side buttons are switches to ground with an internal pull-up,
-# pressed reads low, so they share one Keys group. key_number is the index
-# into this tuple.
-BUTTON_PINS = (board.BUTTON_TOP, board.BUTTON_MIDDLE, board.BUTTON_BOTTOM)
-
-# key_number in the keypad.Keys group:
-#   0 = TOP       -- already used to step presets.
-#   1 = MIDDLE    -- steps the white LEDs / selected sample.
-#   2 = BOTTOM    -- plays the selected sample, per its playmode.
-TOP = 0
-MIDDLE = 1
-BOTTOM = 2
-
-keys = keypad.Keys(BUTTON_PINS, value_when_pressed=False, pull=True)
-
-# The paddle is read from its HANDLE_OUT stage (GP20) rather than HANDLE_IN:
-# HANDLE_IN is the travel end-stop, and its tactile click leaks a loud thump
-# into the mic. HANDLE_OUT is the earlier "user is squeezing" switch with no
-# hard end-stop. It is normally closed to ground, so with a pull-up it reads low
-# at rest and high once held.
-paddle = digitalio.DigitalInOut(board.HANDLE_OUT)
-paddle.switch_to_input(pull=digitalio.Pull.UP)
-
-# Top four red LEDs: one per preset. The lit one is the active preset.
-# None are lit is clean passthrough.
-RED_PINS = (board.LED_RED1, board.LED_RED2, board.LED_RED3, board.LED_RED4)
-
-red_leds = []
-for _pin in RED_PINS:
-    _led = digitalio.DigitalInOut(_pin)
-    _led.direction = digitalio.Direction.OUTPUT
-    red_leds.append(_led)
+# block type -> (module, class, {parameter: converter}, (required parameters,))
+_BLOCKS = {
+    "lfo": (
+        "LFO",
+        {
+            "waveform": _waveform,
+            "rate": _block,
+            "scale": _block,
+            "offset": _block,
+            "phase_offset": _block,
+            "once": _bool,
+            "interpolate": _bool,
+        },
+        (),
+    ),
+    "math": (
+        "Math",
+        {
+            "operation": _math_operation,
+            "a": _block,
+            "b": _block,
+            "c": _block,
+        },
+        ("operation", "a"),
+    ),
+}
 
 
-# Four white LEDs: one per sample. The lit one is the active sample.
-WHITE_PINS = (board.LED_WHITE1, board.LED_WHITE2, board.LED_WHITE3, board.LED_WHITE4)
+def _make_block(spec, name, blocks):
+    """Build one synthio.LFO or synthio.Math from a ``{"block": ...}`` dict."""
 
-white_leds = []
-for _pin in WHITE_PINS:
-    _led = digitalio.DigitalInOut(_pin)
-    _led.direction = digitalio.Direction.OUTPUT
-    white_leds.append(_led)
+    kind = spec.get("block", spec.get("type"))
+    if kind is None:
+        raise ValueError('{} block is missing the "block" key'.format(name))
+    if not isinstance(kind, str):
+        raise ValueError("{} block type must be a string".format(name))
+
+    key = kind.lower().replace(" ", "_").replace("-", "_")
+    if key not in _BLOCKS:
+        raise ValueError("unknown block type: {}".format(kind))
+    class_name, params, required = _BLOCKS[key]
+
+    kwargs = {}
+    for param, value in spec.items():
+        if param in ("block", "type"):
+            continue
+        if param not in params:
+            raise ValueError("{} has no parameter {}".format(class_name, param))
+        kwargs[param] = params[param](value, "{} {}".format(name, param), blocks)
+
+    for param in required:
+        if param not in kwargs:
+            raise ValueError("{} requires {}".format(class_name, param))
+
+    return getattr(synthio, class_name)(**kwargs)
 
 
-def update_red_leds(ctx):
-    """Light the red LED belonging to the active preset, if any."""
-    for index, _led in enumerate(red_leds):
-        _led.value = ctx.active == index + 1
+def _biquad(value, name, blocks=None):
+    """Build synthio.Biquad object(s) for audiofilters.Filter.
 
+    Accepts one filter dict or a list of them, to run several biquads in
+    series::
 
-def update_white_leds(ctx):
-    """Light exactly the currently selected white LED."""
-    for index, _led in enumerate(white_leds):
-        _led.value = ctx.white_active == index + 1
+        "filter": {"mode": "LOW_PASS", "frequency": 800, "Q": 0.7071}
+        "filter": [{"mode": "HIGH_PASS", "frequency": 100},
+                   {"mode": "LOW_PASS", "frequency": 4000}]
 
-
-def build_sample_chain(wave, sample, loop):
-    """Build and wire the effect chain for a sample's wave file, if it has one.
-
-    WIRING ORDER MATTERS, same as `build()`: work from the end backwards, so
-    the call that hands the wave to something is the last one.
-
-    :param wave: The `audiocore.WaveFile` to feed into the chain, or straight
-        to the mixer if there are no effects.
-    :param dict sample: One entry from `SAMPLES`, i.e. a
-        ``load_samples()`` dict with "effects" and "blocks" keys.
-    :param bool loop: Whether wave playback should loop. A sample's playmode
-        does not change while it stays loaded, so this is fixed for the whole
-        chain and threaded through every stage.
-    :return: ``(chain, source)`` -- ``chain`` is the list of effect objects to
-        `deinit()` later (empty if there are none), ``source`` is what to
-        hand to ``mixer.voice[1].play()``.
+    ``frequency``, ``Q`` and ``A`` are block inputs, so a filter can be swept.
     """
-    effects_specs = sample["effects"]
-    if not effects_specs:
-        return [], wave
 
-    preset = {"list": effects_specs, "blocks": sample["blocks"]}
-    chain = create_effects(preset, blocks={"handle": handle_control}, **FORMAT)
-    if not chain:
-        # All effects in effects_specs were "enabled": false.
-        return [], wave
-    for index in range(len(chain) - 1, 0, -1):
-        chain[index].play(chain[index - 1], loop=loop)
-    chain[0].play(wave, loop=loop)
-    return chain, chain[-1]
+    if isinstance(value, (list, tuple)):
+        return [_biquad(item, name, blocks) for item in value]
 
+    if not isinstance(value, dict):
+        raise ValueError("{} must be a dict or list of dicts".format(name))
 
-def load_selected_wave_sample(ctx):
-    """Load the selected sample wave file.
-
-    Points ``ctx.current_wave``, ``ctx.current_playmode``,
-    ``ctx.current_effects`` and ``ctx.current_source`` at it, stopping and
-    freeing whatever was loaded before. ``ctx.white_active`` is 1-based;
-    ``SAMPLES`` is 0-based, so it is short by one. A white LED with no matching
-    entry in ``SAMPLES`` (fewer samples configured than white LEDs) leaves
-    ``ctx.current_wave`` / ``ctx.current_source`` ``None``.
-
-    A sample whose effects fail to build (an effect this firmware lacks, or
-    one too many for RAM) falls back to the plain wave.
-
-    :param ctx: The mutable state container.
-    """
-    stop_current_wave(ctx)
-    for _effect in ctx.current_effects:
-        _effect.deinit()
-    ctx.current_effects = []
-    if ctx.current_wave is not None:
-        ctx.current_wave.deinit()
-        ctx.current_wave = None
-    ctx.current_playmode = "oneshot"
-    ctx.current_source = None
-    gc.collect()
-
-    if ctx.white_active > len(SAMPLES):
-        print("no sample configured for LED {}".format(ctx.white_active))
-        return
-
-    sample = SAMPLES[ctx.white_active - 1]
-    ctx.current_playmode = sample["playmode"]
-    path = "/{}".format(sample["file"])
+    mode = value.get("mode", "LOW_PASS")
+    if not isinstance(mode, str):
+        raise ValueError("{} mode must be a string".format(name))
     try:
-        ctx.current_wave = audiocore.WaveFile(path)
-    except OSError as error:
-        print("{} not loaded: {}".format(path, error))
-        return
+        mode = getattr(synthio.FilterMode, mode.upper())
+    except AttributeError as exc:
+        raise ValueError("unknown filter mode: {}".format(value["mode"])) from exc
 
-    try:
-        ctx.current_effects, ctx.current_source = build_sample_chain(
-            ctx.current_wave, sample, loop=ctx.current_playmode != "oneshot"
-        )
-    except (ValueError, MemoryError) as error:
-        print("{} effects failed: {}".format(path, error))
-        ctx.current_effects, ctx.current_source = [], ctx.current_wave
+    if "frequency" not in value:
+        raise ValueError("{} requires a frequency".format(name))
+    kwargs = {"frequency": _block(value["frequency"], "frequency", blocks)}
+    if "Q" in value:
+        kwargs["Q"] = _block(value["Q"], "Q", blocks)
+    if value.get("A") is not None:
+        # Gain of peaking and shelving filters: A = 10 ** (dBgain / 40).
+        kwargs["A"] = _block(value["A"], "A", blocks)
 
-    print(
-        "loaded {} ({} Hz, {} ch, {} bit, {} mode, {} effect(s))".format(
-            path,
-            ctx.current_wave.sample_rate,
-            ctx.current_wave.channel_count,
-            ctx.current_wave.bits_per_sample,
-            ctx.current_playmode,
-            len(ctx.current_effects),
-        )
-    )
+    return synthio.Biquad(mode, **kwargs)
 
 
-def stop_current_wave(ctx):
-    """Stop whatever mixer voice 1 is playing, if anything.
-    .
+def _taps(value, name, blocks=None):
+    """Tap positions/levels for audiodelays.MultiTapDelay.
+
+    Each tap is either a position (0.0 - 1.0 of the delay buffer) or a
+    ``[position, level]`` pair: ``"taps": [[0.666, 0.7], 1.0]``.
     """
-    mixer.voice[1].stop()
-    ctx.wave_playing = False
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("{} must be a list".format(name))
 
-
-def play_current_wave_sample(ctx):
-    """Handle a BOTTOM button press, per the selected sample's playmode.
-
-    * "oneshot"   -- plays through once; a press while it is still playing
-                     restarts it, since `audiomixer.MixerVoice.play` always
-                     replaces whatever a voice is doing.
-    * "hold"      -- starts looping; `release_current_wave()` stops it.
-    * "startstop" -- toggles between looping and stopped.
-
-    :param ctx: The mutable state container.
-    """
-    if ctx.current_source is None:
-        print("no wave loaded for LED {}".format(ctx.white_active))
-        return
-
-    if ctx.current_effects:
-        # Re-hand the wave to the head of the chain so the press restarts it.
-        ctx.current_effects[0].play(
-            ctx.current_wave, loop=ctx.current_playmode != "oneshot"
-        )
-
-    if ctx.current_playmode == "oneshot":
-        mixer.voice[1].play(ctx.current_source)
-        print("playing {} (oneshot)".format(ctx.white_active))
-    elif ctx.current_playmode == "hold":
-        mixer.voice[1].play(ctx.current_source, loop=True)
-        ctx.wave_playing = True
-        print("playing {} (hold)".format(ctx.white_active))
-    elif ctx.current_playmode == "startstop":
-        if ctx.wave_playing:
-            stop_current_wave(ctx)
-            print("stopped {} (startstop)".format(ctx.white_active))
+    taps = []
+    for tap in value:
+        if isinstance(tap, (list, tuple)):
+            if len(tap) != 2:
+                raise ValueError("{} pairs must be [position, level]".format(name))
+            taps.append((_float(tap[0], name), _float(tap[1], name)))
         else:
-            mixer.voice[1].play(ctx.current_source, loop=True)
-            ctx.wave_playing = True
-            print("playing {} (startstop)".format(ctx.white_active))
+            taps.append(_float(tap, name))
+    return tuple(taps)
 
 
-def release_current_wave(ctx):
-    """Handle a BOTTOM button release -- only "hold" cares about this.
+# effect name -> (module name, class name, {parameter: converter})
+#
+# Only sound-affecting constructor parameters are listed; everything in
+# FORMAT_ARGS is deliberately absent.
+EFFECTS = {
+    "chorus": (
+        "audiodelays",
+        "Chorus",
+        {
+            "max_delay_ms": _int,
+            "delay_ms": _block,
+            "voices": _block,
+            "mix": _block,
+        },
+    ),
+    "echo": (
+        "audiodelays",
+        "Echo",
+        {
+            "max_delay_ms": _int,
+            "delay_ms": _block,
+            "decay": _block,
+            "mix": _block,
+            "freq_shift": _bool,
+        },
+    ),
+    "granular_pitch_shift": (
+        "audiodelays",
+        "GranularPitchShift",
+        {
+            "semitones": _block,
+            "mix": _block,
+            "grain_size": _int,
+            "density": _int,
+            # Not a block input: the core reads spread as a plain float.
+            "spread": _float,
+        },
+    ),
+    "multi_tap_delay": (
+        "audiodelays",
+        "MultiTapDelay",
+        {
+            "max_delay_ms": _int,
+            "delay_ms": _block,
+            "decay": _block,
+            "mix": _block,
+            "taps": _taps,
+        },
+    ),
+    "pitch_shift": (
+        "audiodelays",
+        "PitchShift",
+        {
+            "semitones": _block,
+            "mix": _block,
+            "window": _int,
+            "overlap": _int,
+        },
+    ),
+    "distortion": (
+        "audiofilters",
+        "Distortion",
+        {
+            "drive": _block,
+            "pre_gain": _block,
+            "post_gain": _block,
+            "mode": _distortion_mode,
+            "soft_clip": _bool,
+            "mix": _block,
+        },
+    ),
+    "filter": (
+        "audiofilters",
+        "Filter",
+        {
+            "filter": _biquad,
+            "mix": _block,
+        },
+    ),
+    "phaser": (
+        "audiofilters",
+        "Phaser",
+        {
+            "frequency": _block,
+            "feedback": _block,
+            "mix": _block,
+            "stages": _int,
+        },
+    ),
+    "freeverb": (
+        "audiofreeverb",
+        "Freeverb",
+        {
+            "roomsize": _block,
+            "damp": _block,
+            "mix": _block,
+        },
+    ),
+}
 
-    :param ctx: The mutable state container.
+# Friendlier spellings accepted for the "effect" key.
+ALIASES = {
+    "reverb": "freeverb",
+    "delay": "echo",
+    "multitap_delay": "multi_tap_delay",
+    "multitapdelay": "multi_tap_delay",
+    "pitchshift": "pitch_shift",
+    "granularpitchshift": "granular_pitch_shift",
+}
+
+
+def _normalize(name):
+    """ "GranularPitchShift", "granular pitch shift", "reverb" -> table key."""
+    if not isinstance(name, str):
+        raise ValueError("effect name must be a string")
+
+    # Insert underscores at CamelCase boundaries so class names work directly.
+    out = ""
+    for i, char in enumerate(name):
+        if char.isupper() and i and not name[i - 1].isupper():
+            out += "_"
+        out += char
+    key = out.lower().replace(" ", "_").replace("-", "_")
+    key = ALIASES.get(key, key)
+
+    if key not in EFFECTS:
+        raise ValueError("unknown effect: {}".format(name))
+    return key
+
+
+def create_effect(
+    spec,
+    blocks=None,
+    sample_rate=48000,
+    channel_count=1,
+    bits_per_sample=16,
+    samples_signed=True,
+    buffer_size=1024,
+):
+    """Create one audio effect object from a JSON effect dict.
+
+    :param dict spec: The effect config. Must have an ``"effect"`` key naming
+        the effect type; every other key is a tunable parameter of that effect.
+    :param dict blocks: Blocks that ``"$name"`` parameters may refer to. Values
+        are either block config dicts or ready-made `synthio` block objects.
+    :param int sample_rate: Frame rate of the audio chain, in Hz.
+    :param int channel_count: 1 = mono, 2 = stereo.
+    :param int bits_per_sample: Bit depth of the audio chain.
+    :param bool samples_signed: Whether chain samples are signed.
+    :param int buffer_size: Size in bytes of each of the effect's two buffers.
+    :return: The constructed effect, ready to be given a source with ``play()``.
     """
-    if ctx.current_playmode == "hold":
-        stop_current_wave(ctx)
-        print("stopped {} (hold released)".format(ctx.white_active))
+    if not isinstance(spec, dict):
+        raise ValueError("effect config must be a dict")
+    if "effect" not in spec:
+        raise ValueError('effect config is missing the "effect" key')
+
+    key = _normalize(spec["effect"])
+    module_name, class_name, params = EFFECTS[key]
+    blocks = _as_blocks(blocks)
+
+    kwargs = {
+        "sample_rate": sample_rate,
+        "channel_count": channel_count,
+        "bits_per_sample": bits_per_sample,
+        "samples_signed": samples_signed,
+        "buffer_size": buffer_size,
+    }
+    for name, value in spec.items():
+        if name == "effect" or name == "enabled" or name in FORMAT_ARGS:
+            # Format args come from the audio chain, not the preset; "enabled"
+            # is handled by the caller (create_effect_chain/create_effects),
+            # which skips disabled specs before they ever reach here.
+            continue
+        if name not in params:
+            raise ValueError("{} has no parameter {}".format(class_name, name))
+        kwargs[name] = params[name](value, name, blocks)
+
+    try:
+        module = __import__(module_name)
+    except ImportError as exc:
+        raise ValueError(
+            "{} is unavailable: this build has no {}".format(class_name, module_name)
+        ) from exc
+
+    return getattr(module, class_name)(**kwargs)
 
 
-# The handle travel pot, offered to the presets as the block named
-# "$handle".
-handle_pot = analogio.AnalogIn(board.HANDLE_POSITION)
-handle_control = synthio.Math(synthio.MathOperation.SUM, 0.0, 0.0, 0.0)
+def _is_enabled(spec, name):
+    """Whether an effect spec's ``"enabled"`` key allows it into the chain.
 
-
-# The volume knob is a plain potentiometer across 3V3 with its wiper on GP29.
-knob = analogio.AnalogIn(board.VOLUME)
-
-
-def apply_volume(ctx, force=False):
-    """Set the DAC digital volume from the knob, if the knob has moved.
-
-    The knob's travel maps linearly onto `VOLUME_MIN_DB` .. `VOLUME_MAX_DB`,
-    except for `VOLUME_OFF_FRACTION` at the anticlockwise end, which mutes.
-
-    Small movements are ignored: the wiper is noisy enough to jitter by a few
-    hundred counts while nobody is touching it, and each change costs an I2C
-    write in the middle of the audio loop.
-
-    :param ctx: The mutable state container.
-    :param bool force: Apply the current position even if it has not moved --
-        used for the first read, and after anything else has written the DAC
-        volume.
+    Missing means enabled -- ``"enabled"`` is opt-out, not opt-in, so existing
+    configs without the key are unaffected.
     """
-    raw = knob.value
-    if not force and abs(raw - ctx.knob_applied) < VOLUME_DEADBAND:
-        return
-    ctx.knob_applied = raw
-
-    fraction = raw / 65535
-    if fraction <= VOLUME_OFF_FRACTION:
-        # -66 dB is the bottom of the codec's digital volume scale; below that
-        # the codes are reserved rather than usable, so this is as close to off
-        # as this control goes. It is inaudible.
-        ctx.volume = None
-        codec.dac_volume = -66
-        print("volume off")
-        return
-
-    # Rescale so the usable part of the travel still covers the whole range.
-    fraction = (fraction - VOLUME_OFF_FRACTION) / (1 - VOLUME_OFF_FRACTION)
-    ctx.volume = VOLUME_MIN_DB + fraction * (VOLUME_MAX_DB - VOLUME_MIN_DB)
-    codec.dac_volume = ctx.volume
-    print("volume {:+.1f} dB".format(codec.dac_volume))
+    if "enabled" not in spec:
+        return True
+    value = spec["enabled"]
+    if not isinstance(value, bool):
+        raise ValueError("{} enabled must be true or false".format(name))
+    return value
 
 
-def read_handle():
-    """Update `handle_control` from the handle position, 0.0 out to 1.0 in."""
-    total = 0
-    for _ in range(HANDLE_SAMPLES):
-        total += handle_pot.value
-    raw = total / HANDLE_SAMPLES
+def create_effects(preset, blocks=None, **format_args):
+    """Create the effects of a preset dict, without wiring them together.
 
-    fraction = (HANDLE_OUT_COUNTS - raw) / (HANDLE_OUT_COUNTS - HANDLE_IN_COUNTS)
-    fraction = min(1.0, max(0.0, fraction))
-    handle_control.a += (fraction - handle_control.a) * HANDLE_SMOOTHING
+    For callers that build their own graph -- notably ones that have to wire
+    from the output backwards -- and still want the preset's shared blocks.
 
+    An effect spec with ``"enabled": false`` is skipped entirely, same as in
+    `create_effect_chain`.
 
-# --- Main demo setup and loop ---
+    :param preset: A preset dict, ``{"blocks": ..., "list": ...}``, or a bare
+        list of effect configs.
+    :param dict blocks: Ready-made blocks (or block configs) from the host.
+    :param format_args: Audio format arguments, passed to `create_effect`.
+    :return: The list of effect objects, in signal-flow order, unconnected,
+        omitting any that were disabled.
+    """
+    if isinstance(preset, dict):
+        specs = preset.get("list", ())
+        definitions = preset.get("blocks", None)
+    else:
+        specs, definitions = preset, None
 
-data_context = DataContext()
-data_context.paddle_held = paddle.value
+    if definitions is not None and not isinstance(definitions, dict):
+        raise ValueError('"blocks" must be a mapping of name to block')
 
-# Initialize the first LED and load its wave file.
-update_white_leds(data_context)
-load_selected_wave_sample(data_context)
+    # The preset's definitions and the host's blocks share one namespace, so
+    # that "$name" means the same object wherever it appears in the preset.
+    # The host's win, letting a config name a fallback for a knob that this
+    # particular program does not provide.
+    namespace = dict(definitions) if definitions else {}
+    if blocks:
+        namespace.update(blocks)
+    namespace = _Blocks(namespace)
 
-print(
-    "demo v2: pack {!r}, {} preset(s), mic gain {:.0f} dB, codec ADC HPF {:d} Hz".format(
-        PACK_NAME, len(PRESETS), codec.mic_gain, HPF_HZ
-    )
-)
-print("TOP button = next preset ({} spots, 0 = clean)".format(len(PRESETS) + 1))
-print(
-    "volume knob = DAC volume, {:.0f} to {:+.0f} dB".format(
-        VOLUME_MIN_DB, VOLUME_MAX_DB
-    )
-)
-print('handle travel = "$handle" block, 0.0 (out) to 1.0 (in)')
-
-# The DAC is permanently un-muted. The paddle gates only mixer voice 0
-# (the mic/effects chain) so that wave playback on voice 1 still works with the
-# handle released.
-codec.dac_soft_mute = False
-apply_volume(data_context, force=True)
-mixer.voice[0].level = 0.0  # mic chain silent until the paddle is squeezed
-# Seed the handle before the first chain is built, so a preset that maps it
-# starts at the handle's real position rather than sliding up from 0.
-for _ in range(int(1 / HANDLE_SMOOTHING) + 1):
-    read_handle()
-select_preset(data_context, 0)
-
-try:
-    while True:
-        # Drain every button event that arrived since the last pass.
-        event = keys.events.get()
-        while event is not None:
-            if event.key_number == TOP:
-                data_context.top_held = event.pressed
-            if event.key_number == MIDDLE:
-                data_context.middle_held = event.pressed
-            if event.pressed and event.key_number == TOP:
-                # Step to the next spot in the cycle, wrapping around. The
-                # cycle is one longer than the preset count: spot 0 is clean.
-                select_preset(
-                    data_context, (data_context.active + 1) % (len(PRESETS) + 1)
-                )
-            if event.pressed and event.key_number == MIDDLE:
-                # Cycle the white LEDs: 1 -> 2 -> 3 -> 4 -> 1 ...
-                # No empty spot; exactly one is always lit.
-                data_context.white_active = (
-                    data_context.white_active % len(white_leds) + 1
-                )
-                update_white_leds(data_context)
-                load_selected_wave_sample(data_context)
-                print("white LED {}".format(data_context.white_active))
-            if event.pressed and event.key_number == BOTTOM:
-                play_current_wave_sample(data_context)
-            if event.released and event.key_number == BOTTOM:
-                release_current_wave(data_context)
-            event = keys.events.get()
-
-        # TOP + MIDDLE held together for SHUTDOWN_HOLD_SECONDS powers off.
-        if data_context.top_held and data_context.middle_held:
-            if data_context.combo_since is None:
-                data_context.combo_since = time.monotonic()
-            elif time.monotonic() - data_context.combo_since >= SHUTDOWN_HOLD_SECONDS:
-                print(
-                    "TOP+MIDDLE held {}s: shutting down".format(SHUTDOWN_HOLD_SECONDS)
-                )
-                power_hold = digitalio.DigitalInOut(board.POWER_HOLD)
-                power_hold.direction = digitalio.Direction.OUTPUT
-                power_hold.value = False
-        else:
-            data_context.combo_since = None
-
-        # The paddle gates the mic/effects chain (mixer voice 0)
-        held = paddle.value
-        if held != data_context.paddle_held:
-            data_context.paddle_held = held
-            print("paddle {}".format("pressed" if held else "released"))
-            time.sleep(0.1)
-            mixer.voice[0].level = 1.0 if held else 0.0
-
-        # The knob is free-running: it is read every pass and only acted on
-        # when it has actually moved.
-        apply_volume(data_context)
-
-        # The handle is read every pass too, always applied
-        read_handle()
-
-        # Reading .overflow clears it. It trips if the playback side falls
-        # behind the mic, which should not happen here. Both run off the
-        # same BCLK, so a report means the DSP chain can't keep up.
-        if mic.overflow:
-            print("overflow")
-
-        time.sleep(0.01)
-except KeyboardInterrupt:
-    teardown(data_context)
-    stop_current_wave(data_context)
-    for effect in data_context.current_effects:
-        effect.deinit()
-    if data_context.current_wave is not None:
-        data_context.current_wave.deinit()
-    mixer.deinit()
-    i2s.deinit()
-    mic.deinit()
-    keys.deinit()
-    paddle.deinit()
-    knob.deinit()
-    handle_pot.deinit()
-    for led in red_leds:
-        led.value = False
-        led.deinit()
-    for led in white_leds:
-        led.value = False
-        led.deinit()
+    return [
+        create_effect(spec, blocks=namespace, **format_args)
+        for index, spec in enumerate(specs)
+        if _is_enabled(spec, "specs[{}]".format(index))
+    ]
