@@ -261,6 +261,14 @@ class uChameleon:
             self._sample = sample
             self._needs_update = True
 
+    def stop(self) -> None:
+        if not self.usb_connected:
+            self._audio_out.stop()
+        else:
+            self._sample = None
+            self._usb_mixer.stop_voice()
+            usb_microphone.stop()
+
     @property
     def sample_rate(self) -> int:
         return self._sample_rate
