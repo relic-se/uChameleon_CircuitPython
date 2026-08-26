@@ -21,14 +21,22 @@ def _save(value: str) -> None:
         pass
     else:
         try:
-            storage.remount("/", readonly=False)
-            with open("/settings.toml", "r+") as f:
+            with open("/settings.toml", "r") as f:
                 data = toml.load(f)
-                data[KEY] = value
-                f.seek(0)
+            data[KEY] = value
+
+            try:
+                storage.remount("/", readonly=False)
+            except RuntimeError:
+                pass
+
+            with open("/settings.toml", "w") as f:
                 toml.dump(data, f)
-                f.truncate()
-            storage.remount("/", readonly=True)
+            
+            try:
+                storage.remount("/", readonly=True)
+            except RuntimeError:
+                pass
         except RuntimeError:
             pass
 
