@@ -17,7 +17,7 @@ import usb_midi
 
 from adafruit_debouncer import Button, Debouncer
 from adafruit_midi import MIDI, MIDIMessage
-from relic_tlv320aic3204 import TLV320AIC3204, INPUT_1, IMPEDANCE_40K
+from relic_tlv320aic3204 import TLV320AIC3204, INPUT_2, INPUT_3, IMPEDANCE_40K
 
 try:
     from typing import Optional, Tuple
@@ -168,10 +168,10 @@ class uChameleon:
 
         # Connect IN1L to Left MICPGA
         input_gain = input_gain if input_gain is not None else float(supervisor.get_setting("INPUT_GAIN", 0.0))  # dB
-        self._codec.connect_left_input(INPUT_1, IMPEDANCE_40K)
+        self._codec.connect_left_input(INPUT_2, IMPEDANCE_40K, balanced=True)
         self._codec.left_input_gain = input_gain  # dB
         if not self._mono:
-            self._codec.connect_right_input(INPUT_1, IMPEDANCE_40K)
+            self._codec.connect_right_input(INPUT_3, IMPEDANCE_40K, balanced=True)
             self._codec.right_input_gain = input_gain  # dB
 
         # Setup DAC Output
