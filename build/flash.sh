@@ -35,7 +35,7 @@ echo ""
 
 echo "Installing latest CircuitPython firmware..."
 circfirm install "${LATEST}" --board-id="${BOARD_ID}"
-sleep 6
+sleep 10
 echo ""
 
 echo "Installing requirements..."
