@@ -6,12 +6,20 @@ import digitalio
 import microcontroller
 import storage
 import supervisor
+import time
 import usb_audio
 import usb_cdc
 import usb_hid
 import usb_midi
 
-from uchameleon import _PIN_BTN0, _PIN_BTN1
+from uchameleon import _PIN_BTN0, _PIN_BTN1, _PIN_LED0
+
+# Blink led to indicate we're loading
+pin_led0 = digitalio.DigitalInOut(_PIN_LED0)
+pin_led0.switch_to_output()
+for i in range(6):
+    pin_led0.value = not pin_led0.value
+    time.sleep(0.1)
 
 # Initialize button inputs
 pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
