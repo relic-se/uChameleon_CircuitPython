@@ -2,17 +2,21 @@
 #
 # SPDX-License-Identifier: GPLv3
 
-import digitalio
 import microcontroller
+import supervisor
 
 import programs
-from uchameleon import _PIN_BTN0
 
 # Initialize button input
-pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
-pin_btn0.switch_to_input(pull=digitalio.Pull.UP)
+if supervisor.runtime.usb_connected:
+    import digitalio
+    
+    from uchameleon import _PIN_BTN0
+    
+    pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
+    pin_btn0.switch_to_input(pull=digitalio.Pull.UP)
 
-if pin_btn0.value:  # don't load program if left button is pressed
+if not supervisor.runtime.usb_connected or pin_btn0.value:  # don't load program if left button is pressed
     try:
         programs.load(save=False)
     except OSError:
