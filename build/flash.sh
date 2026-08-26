@@ -13,8 +13,6 @@ else
 fi
 
 LATEST="$(circfirm query latest --pre-release)"
-REPO_PATH="$(dirname "${PWD}")"
-NAME="$(basename "${REPO_PATH}")"
 
 echo "Put the device in UF2 bootloader mode and then press enter."
 read
@@ -38,32 +36,6 @@ circfirm install "${LATEST}" --board-id="${BOARD_ID}"
 sleep 10
 echo ""
 
-echo "Installing requirements..."
-circup install -r ../requirements.txt
-echo ""
-
-echo "Unpacking program..."
-rm -rf "./${NAME}" || true
-unzip "../dist/${NAME}.zip"
-rm -rf "./${NAME}/lib" || true
-echo ""
-
-echo "Locating device path..."
-DEVICE_PATH="$(circup list | perl -n -e "/Found device ${BOARD_ID} at (.*),/ && print \$1")"
-echo "Found device at ${DEVICE_PATH}\n"
-
-echo "Installing program..."
-for dir in $(find ./${NAME} -mindepth 1 -type d)
-do
-    echo "Making directory ${DEVICE_PATH}${dir##./${NAME}}"
-    mkdir "${DEVICE_PATH}${dir##./${NAME}}"
-done
-for file in $(find ./${NAME} -type f)
-do
-    echo "Copying ${file##./${NAME}/} to ${DEVICE_PATH}${file##./${NAME}}"
-    cp "${file}" "${DEVICE_PATH}${file##./${NAME}}"
-done
-rm -rf "./${NAME}" || true
-echo ""
+./install.sh "${BOARD_ID}"
 
 echo "Device flashed successfully!"
