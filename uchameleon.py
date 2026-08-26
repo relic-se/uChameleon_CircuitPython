@@ -27,8 +27,8 @@ except ImportError:
 _PIN_UART_TX = board.GP0
 _PIN_UART_RX = board.GP1
 
-_PIN_STEMMA_SCL = board.GP2
-_PIN_STEMMA_SDA = board.GP3
+_PIN_STEMMA_SDA = board.GP2
+_PIN_STEMMA_SCL = board.GP3
 
 _PIN_RST = board.GP4
 _PIN_MCLK = board.GP5
@@ -121,7 +121,7 @@ class uChameleon:
         _pin_sw1.switch_to_input(pull=digitalio.Pull.UP)
         self._right_switch = Debouncer(_pin_sw1)
 
-        self._pin_adc_mux = digitalio.DigitalInOut(_PIN_SW1)
+        self._pin_adc_mux = digitalio.DigitalInOut(_PIN_ADC_MUX)
         self._pin_adc_mux.switch_to_output()
 
         self._adcs = tuple([
