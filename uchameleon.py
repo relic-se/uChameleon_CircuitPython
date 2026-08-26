@@ -290,7 +290,9 @@ class uChameleon:
         ])
 
     @leds.setter
-    def leds(self, value: float|tuple) -> None:
+    def leds(self, value: bool|int|float|tuple) -> None:
+        if type(value) in {bool, int}:
+            value = float(value)
         if type(value) is float:
             value = (value,)
         value = tuple([int((2 ** 16 - 1) * min(max(x, 0.0), 1.0)) for x in value])
