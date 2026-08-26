@@ -28,7 +28,7 @@ if not pin_btn1.value:
 # Rename device
 supervisor.set_usb_identification(
     manufacturer="relic-se",
-    product="μChameleon",
+    product="uChameleon",
 )
 
 # Mount drive, allow USB file access if left button is pressed
@@ -47,10 +47,10 @@ usb_cdc.enable(console=True, data=False)
 # Setup MIDI
 usb_midi.enable()
 usb_midi.set_names(
-    streaming_interface_name="μChameleon MIDI",
-    audio_control_interface_name="μChameleon Audio",
-    in_jack_name="μChameleon",
-    out_jack_name="μChameleon",
+    streaming_interface_name="uChameleon MIDI",
+    audio_control_interface_name="uChameleon Audio",
+    in_jack_name="uChameleon",
+    out_jack_name="uChameleon",
 )
 
 # Setup Audio
