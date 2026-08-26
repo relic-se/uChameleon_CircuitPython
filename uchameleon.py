@@ -94,7 +94,10 @@ class uChameleon:
         )
 
         # Setup STEMMA QT
-        self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA),
+        try:
+            self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA),
+        except RuntimeError:
+            self._stemma = None
 
         # Setup Controls
         self._leds = tuple([
@@ -263,7 +266,7 @@ class uChameleon:
         return supervisor.runtime.usb_connected and usb_microphone is not None
 
     @property
-    def stemma(self) -> I2C:
+    def stemma(self) -> I2C|None:
         return self._stemma
 
     def get_midi_messages(self) -> Tuple[Optional[MIDIMessage]]:
