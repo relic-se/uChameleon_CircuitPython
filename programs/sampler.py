@@ -12,6 +12,7 @@ import synthio
 import os
 
 from detect import Detect, fftfreq_areas as fftfreq
+import programs
 import relic_waveform
 from uchameleon import uChameleon
 
@@ -95,6 +96,8 @@ def press(frequency: float) -> None:
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
+    programs.update(pedal)
+
     pedal.leds = (not pedal.bypass) / (1 + (not pressed))
 
     pots = pedal.pots

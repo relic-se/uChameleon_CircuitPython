@@ -11,6 +11,7 @@ import synthio
 from synthtools import Patch, SubtractiveSynth
 
 from detect import Detect
+import programs
 from uchameleon import uChameleon
 
 # Constants
@@ -167,6 +168,8 @@ def note_on(notenum: int, velocity: float = 1.0) -> None:
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
+    programs.update(pedal)
+
     pedal.leds = (not pedal.bypass) / (1 + (active_notenum is None))
 
     pots = pedal.pots
