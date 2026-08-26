@@ -23,7 +23,7 @@ detect = Detect()
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
-    pedal.led = (not pedal.bypass) / (1 + (not detect.active))
+    pedal.leds = (not pedal.bypass) / (1 + (not detect.active))
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass

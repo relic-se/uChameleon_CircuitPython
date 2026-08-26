@@ -75,7 +75,7 @@ while True:
         timestamp = now
         led_state = not led_state
 
-    pedal.led = led_state and not pedal.bypass
+    pedal.leds = led_state and not pedal.bypass
 
     if pedal.left_switch.rose or pedal.left_switch.fell:
         effect.filter = None if pedal.left_switch.value else lpf

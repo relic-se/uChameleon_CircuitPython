@@ -95,7 +95,7 @@ def press(frequency: float) -> None:
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
-    pedal.led = (not pedal.bypass) / (1 + (not pressed))
+    pedal.leds = (not pedal.bypass) / (1 + (not pressed))
 
     pots = pedal.pots
     pedal.mix, pedal.level = pots[0], pots[2]

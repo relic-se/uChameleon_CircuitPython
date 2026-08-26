@@ -21,7 +21,7 @@ while True:
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
-        pedal.led = not pedal.bypass
+        pedal.leds = not pedal.bypass
         
     if pedal.left_switch.rose or pedal.left_switch.fell:
         pedal.codec.adc_loopback = not pedal.left_switch.value

@@ -61,7 +61,7 @@ while True:
             distortion_effect.mix = not pedal.bypass
             filter_effect.mix = not pedal.bypass
 
-    pedal.led = (not pedal.bypass) / (1 + (not boost) * 3)
+    pedal.leds = (not pedal.bypass) / (1 + (not boost) * 3)
 
     mode_index = (int(not pedal.left_switch.value) << 1) | int(not pedal.right_switch.value)
     distortion_effect.mode = MODES[mode_index]

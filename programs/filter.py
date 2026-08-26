@@ -109,4 +109,4 @@ while True:
         effect_filter.mix = not pedal.bypass
         effect_gain.mix = not pedal.bypass
 
-    pedal.led = (lfo.value + 1) / 2 * (not pedal.bypass)
+    pedal.leds = (lfo.value + 1) / 2 * (not pedal.bypass)

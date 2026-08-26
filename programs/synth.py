@@ -167,7 +167,7 @@ def note_on(notenum: int, velocity: float = 1.0) -> None:
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
-    pedal.led = (not pedal.bypass) / (1 + (active_notenum is None))
+    pedal.leds = (not pedal.bypass) / (1 + (active_notenum is None))
 
     pots = pedal.pots
     pedal.mix, pedal.level = pots[0], pots[2]

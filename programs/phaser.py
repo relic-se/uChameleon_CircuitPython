@@ -56,7 +56,7 @@ while True:
     programs.update(pedal)
     pots = pedal.pots
 
-    pedal.led = (lfo.value - MIN_FREQUENCY) / (MAX_FREQUENCY - MIN_FREQUENCY) * (not pedal.bypass)
+    pedal.leds = (lfo.value - MIN_FREQUENCY) / (MAX_FREQUENCY - MIN_FREQUENCY) * (not pedal.bypass)
 
     if tap_pot_lock is not None and abs(tap_pot_lock - pots[0]) >= 0.05:
         tap_pot_lock = None

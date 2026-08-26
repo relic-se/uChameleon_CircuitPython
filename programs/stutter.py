@@ -100,7 +100,7 @@ while True:
     set_waveform(round(pots[1] * (len(waveforms) - 1)))
     lfo.b = pots[2]  # depth
 
-    pedal.led = lfo.value * (not pedal.bypass)
+    pedal.leds = lfo.value * (not pedal.bypass)
     pedal.level = lfo.value
 
     if pedal.left_button.pressed:

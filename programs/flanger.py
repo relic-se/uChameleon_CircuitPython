@@ -63,4 +63,4 @@ while True:
         if pedal.usb_connected:
             effect.mix = not pedal.bypass
     
-    pedal.led = effect.lfo_value * effect.depth * (not pedal.bypass)
+    pedal.leds = effect.lfo_value * effect.depth * (not pedal.bypass)
