@@ -106,6 +106,9 @@ def update(device: uChameleon) -> None:
         _right_long_press = False
 
     if _left_long_press and _right_long_press:
+        device.bypass = True
+        device.update()
+        
         try:
             load_next()
         except OSError:
