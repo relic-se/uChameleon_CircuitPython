@@ -19,7 +19,10 @@ VELOCITY_LEVEL = 0.05
 
 BUFFER_SIZE = 512
 
-# Create synth patches
+MIN_SENSITIVITY = 0.75
+MAX_SENSITIVITY = 1.0
+
+# Create synth patches (max 4)
 PATCHES = (
     Patch(
         name="fat bass", wave="ASAW", detune=1.004,
@@ -105,7 +108,7 @@ PATCHES = (
         # own, so it follows the sweep and the accent with nothing to keep in
         # sync by hand -- see fx_filter_stages in bassline_synth.py.
         fx_filter_stages=1,
-    ),
+    )
 )
 
 # Overclock
@@ -140,12 +143,12 @@ pedal.play(
 )
 
 # Assign patch
-patch = -1
+patch_index = None
 def set_patch(index: int):
-    global patch
-    if index != patch:
-        patch = index % len(PATCHES)
-        synth.load_patch(PATCHES[patch])
+    global patch_index
+    if index != patch_index:
+        patch_index = index % len(PATCHES)
+        synth.load_patch(PATCHES[patch_index])
 set_patch(0)
 
 # Monophonic note handling
@@ -174,7 +177,9 @@ while True:
 
     pots = pedal.pots
     pedal.mix, pedal.level = pots[0], pots[2]
-    set_patch(round(pots[1] * (len(PATCHES) - 1)))
+    detect.sensitivity = (1 - pow(1 - pots[1], 2)) * (MAX_SENSITIVITY - MIN_SENSITIVITY) + MIN_SENSITIVITY
+
+    set_patch((int(not pedal.left_switch.value) << 1) | int(not pedal.right_switch.value))
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass

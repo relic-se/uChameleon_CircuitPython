@@ -180,14 +180,17 @@ class Detect:
 
     def __init__(
         self,
-        attack: float = 0.002,  # begins calculation when relative level is above this value
-        release: float = 0.0005,  # ends calculation when relative level is below this value
+        sensitivity: float = 0.25,
+        attack: float = 1,  # begins calculation when level (relative to sensitivity) is above this value
+        sustain: float = 0.9,  # if level dips below this threshold (relative to sensitivity) and then rises above attack again, it will be interpretted as a new note
+        release: float = 0.1,  # ends calculation when level (relative to sensitivity) is below this value
         impulse_threshold: float = 0.75,
     ):
-        self._attack = min(max(attack, 0.0), 1.0)
-        self._release = min(max(release, 0.0), 1.0)
+        self.sensitivity = sensitivity
+        self._attack = min(max(attack, 0.0001), 1.0)
+        self._sustain = min(max(sustain, 0.0001), 1.0)
+        self._release = min(max(release, 0.0001), 1.0)
         self._impulse_threshold = min(max(impulse_threshold, 0.0), 1.0)
-        self._buffer_size = buffer_size
 
         self._level = MovingAverage(count=3, weighted=False)
         self._frequency = MovingAverage(count=16, weighted=False)
@@ -202,11 +205,22 @@ class Detect:
         self._notenum = self._notename = self._cents = None
 
     @property
+    def sensitivity(self) -> float:
+        return self._sensitivity
+
+    @sensitivity.setter
+    def sensitivity(self, value: float) -> None:
+        self._sensitivity = min(max(value, 0.0001), 0.9999)
+
+    @property
     def active(self) -> bool:
         return self._state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}
 
     @property
     def level(self) -> float:
+        value = self._level.value
+        return min(value / (1 - self._sensitivity), 1.0) if value is not None else 0.0
+
     @property
     def state(self) -> synthio.EnvelopeState|None:
         return self._state
