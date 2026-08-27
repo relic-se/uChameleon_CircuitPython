@@ -198,16 +198,18 @@ class Detect:
         self._level.reset()
         self._frequency.reset()
 
-        self._active = False
+        self._state = None
         self._notenum = self._notename = self._cents = None
 
     @property
     def active(self) -> bool:
-        return self._active
+        return self._state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}
 
     @property
     def level(self) -> float:
-        return self._level.value
+    @property
+    def state(self) -> synthio.EnvelopeState|None:
+        return self._state
 
     @property
     def frequency(self) -> float|None:
@@ -252,32 +254,37 @@ class Detect:
         self._level.update(level_abs(data))
         
         # Decide whether or not to perform calculations using basic noise gate
-        state = None
-        if not self._active and self._level.value > self._attack:
-            self._active = True
+        state = self._state
+        level = self.level
+        if state in {None, synthio.EnvelopeState.SUSTAIN, synthio.EnvelopeState.RELEASE} and level >= self._attack:
             state = synthio.EnvelopeState.ATTACK
-        elif self._active and self._level.value < self._release:
-            self._active = False
+        elif state is not synthio.EnvelopeState.RELEASE and level <= self._release:
             self._frequency.reset()
             state = synthio.EnvelopeState.RELEASE
-        if not self._active:
-            return state
+        elif state == synthio.EnvelopeState.ATTACK and level <= self._sustain:
+            state = synthio.EnvelopeState.SUSTAIN
 
-        # Normalize level
-        data = normalize(data)
+        # Process signal if we're active
+        if state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
 
-        # Clip to impulse start
-        if state == synthio.EnvelopeState.ATTACK:
-            impulse_start = 0
-            for i, x in enumerate(data):
-                if abs(x) >= self._impulse_threshold:
-                    impulse_start = i
-                    break
-            data = data[impulse_start:]
+            # Normalize level
+            data = normalize(data)
+
+            # Clip to impulse start
+            if state == synthio.EnvelopeState.ATTACK:
+                impulse_start = 0
+                for i, x in enumerate(data):
+                    if abs(x) >= self._impulse_threshold:
+                        impulse_start = i
+                        break
+                data = data[impulse_start:]
 
             # Identify most prominent frequency
 
-        self._frequency.update(frequency)
-        if state is not synthio.EnvelopeState.ATTACK:
-            state = synthio.EnvelopeState.SUSTAIN
+            self._frequency.update(frequency)
+
+        # Return new state on change
+        if state == self._state:
+            return None
+        self._state = state
         return state

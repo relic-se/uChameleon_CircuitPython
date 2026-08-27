@@ -113,7 +113,7 @@ while True:
     if not pedal.bypass:
         pedal.audio_in.record(buffer, len(buffer))
         state = detect.update(buffer, pedal.sample_rate)
-        if state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+        if state is synthio.EnvelopeState.ATTACK:
             press(detect.frequency)
         elif state is synthio.EnvelopeState.RELEASE:
             release()

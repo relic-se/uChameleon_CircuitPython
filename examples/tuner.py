@@ -33,5 +33,5 @@ while True:
     if not pedal.bypass:
         pedal.audio_in.record(buffer, len(buffer))
         state = detect.update(buffer, pedal.sample_rate)
-        if state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+        if detect.state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
             print(detect.notename, detect.cents)

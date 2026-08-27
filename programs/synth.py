@@ -186,7 +186,7 @@ while True:
         pedal.audio_in.record(buffer, len(buffer))
         state = detect.update(buffer, pedal.sample_rate)
         # TODO: Control bend with sustain state
-        if active_notenum is None and state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+        if state is synthio.EnvelopeState.ATTACK:
             note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))
         elif state is synthio.EnvelopeState.RELEASE:
             note_off()
