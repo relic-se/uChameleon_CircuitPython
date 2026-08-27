@@ -14,12 +14,9 @@ import usb_midi
 
 from uchameleon import _PIN_BTN0, _PIN_BTN1, _PIN_LED0
 
-# Blink led to indicate we're loading
+# Initialize led indicator
 pin_led0 = digitalio.DigitalInOut(_PIN_LED0)
 pin_led0.switch_to_output()
-for i in range(6):
-    pin_led0.value = not pin_led0.value
-    time.sleep(0.1)
 
 # Initialize button inputs
 pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
@@ -69,3 +66,12 @@ if supervisor.get_setting("USB_AUDIO", True):
         microphone=True,
         speaker=False,
     )
+
+# Long blink on led to indicated we're done with boot
+pin_led0.value = True
+time.sleep(0.5)
+pin_led0.value = False
+
+# Deinitialize pins
+for pin in (pin_led0, pin_btn0, pin_btn1):
+    pin.deinit()

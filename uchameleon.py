@@ -224,13 +224,6 @@ class uChameleon:
         # Prepare initial state
         self.update()
 
-        # Blink led to indicate we're ready
-        for i in range(2):
-            self.leds = True
-            time.sleep(0.2)
-            self.leds = False
-            time.sleep(0.2)
-
     def _update_codec(self) -> None:
         if not self._needs_update:
             return

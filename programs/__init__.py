@@ -5,6 +5,7 @@
 import microcontroller
 import os
 import supervisor
+import time
 
 from uchameleon import uChameleon
 
@@ -90,10 +91,20 @@ def load(program: str|None = None, save: bool = True) -> None:
 def load_next(save: bool = True) -> None:
     load(get_next(), save)
 
+_first_update = True
 _left_long_press = False
 _right_long_press = False
 def update(device: uChameleon) -> None:
-    global _left_long_press, _right_long_press
+    global _first_update, _left_long_press, _right_long_press
+
+    if _first_update:
+        _first_update = False
+        # Two short blinks to indicate program is ready
+        for i in range(2):
+            device.leds = True
+            time.sleep(0.2)
+            device.leds = False
+            time.sleep(0.2)
     
     if device.left_button.long_press:
         _left_long_press = True
