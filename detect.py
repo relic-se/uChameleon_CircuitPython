@@ -35,13 +35,57 @@ def nearest_pow2(value: int) -> int:
             return value
         i += 1
 
-def fftfreq_index(data: np.ndarray, sample_rate: int):
+def fftfreq_index(data: np.ndarray, sample_rate: int) -> float:
     data = ulab.utils.spectrogram(data[:nearest_pow2(len(data))])
     data = data[1 : (len(data) // 2) - 1]
     freq = np.argmax(data) / len(data) * sample_rate / 4
     return freq
 
-def fftfreq_areas(data: np.ndarray, sample_rate: int, scale: float = 0.25, cutoff: float = 0.25) -> None:
+def fftfreq_weighted_mean(data: np.ndarray, sample_rate: int, window: int = 5, scale: float = 0.25) -> float:
+    # Determine buffer_size before performing FFT
+    buffer_size = nearest_pow2(len(data))
+
+    # Linear scale
+    scale = np.arange(scale, 1.0, (1.0 - scale) / (buffer_size / 2), dtype=np.float)[:buffer_size // 2]
+
+    # Perform Fourier Fast Transform (FFT) algorithm on audio signal
+    data = ulab.utils.spectrogram(data[:buffer_size])
+    
+    # Remove upper half of spectrogram
+    data = data[:len(data)//2]
+
+    # Clear first and last entries
+    data[0] = data[len(data) - 1] = 0.0
+
+    # Apply linear scale up to 1.0
+    data *= scale
+
+    # Find the index of the maximum value
+    index = np.argmax(data)
+
+    # Isolate the area
+    area = data[max(index - (window // 2), 0):min(index + (window // 2) + 1, len(data))]
+
+    # Linear distribution of indexes used to calculate weighted mean
+    dist = np.arange(len(area), dtype=np.int16)
+
+    # Get the center index using weighted mean
+    area_sum = np.sum(area)
+    if area_sum <= 0:
+        return None
+    weighted_index = np.sum(area * dist) / np.sum(area)
+
+    # Adjust index by weighted mean
+    index += weighted_index - 1
+
+    # Determine the minimum and maximum possible frequencies
+    min_freq = sample_rate / buffer_size
+    max_freq = sample_rate / 2  # nyquist
+
+    # Calculate frequency from index
+    return (max_freq - min_freq) * (index / (len(data) - 1)) + min_freq
+
+def fftfreq_areas(data: np.ndarray, sample_rate: int, scale: float = 0.25, cutoff: float = 0.25) -> float:
     # Determine buffer_size before performing FFT
     buffer_size = nearest_pow2(len(data))
 
@@ -294,6 +338,12 @@ class Detect:
                 data = data[impulse_start:]
 
             # Identify most prominent frequency
+            # frequency = fftfreq_index(data, sample_rate)
+            # frequency = fftfreq_areas(data, sample_rate)
+            # frequency = fftfreq_crossings_threshold(data, sample_rate)
+            frequency = fftfreq_weighted_mean(data, sample_rate)
+            if frequency is None:
+                return None
 
             self._frequency.update(frequency)
 
