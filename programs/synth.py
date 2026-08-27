@@ -11,6 +11,7 @@ import synthio
 from synthtools import Patch, SubtractiveSynth
 
 from detect import Detect
+import programs
 from uchameleon import uChameleon
 
 # Constants
@@ -18,7 +19,10 @@ VELOCITY_LEVEL = 0.05
 
 BUFFER_SIZE = 512
 
-# Create synth patches
+MIN_SENSITIVITY = 0.75
+MAX_SENSITIVITY = 1.0
+
+# Create synth patches (max 4)
 PATCHES = (
     Patch(
         name="fat bass", wave="ASAW", detune=1.004,
@@ -104,7 +108,7 @@ PATCHES = (
         # own, so it follows the sweep and the accent with nothing to keep in
         # sync by hand -- see fx_filter_stages in bassline_synth.py.
         fx_filter_stages=1,
-    ),
+    )
 )
 
 # Overclock
@@ -139,12 +143,12 @@ pedal.play(
 )
 
 # Assign patch
-patch = -1
+patch_index = None
 def set_patch(index: int):
-    global patch
-    if index != patch:
-        patch = index % len(PATCHES)
-        synth.load_patch(PATCHES[patch])
+    global patch_index
+    if index != patch_index:
+        patch_index = index % len(PATCHES)
+        synth.load_patch(PATCHES[patch_index])
 set_patch(0)
 
 # Monophonic note handling
@@ -167,11 +171,15 @@ def note_on(notenum: int, velocity: float = 1.0) -> None:
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
-    pedal.led = (not pedal.bypass) / (1 + (active_notenum is None))
+    programs.update(pedal)
+
+    pedal.leds = (not pedal.bypass) / (1 + (active_notenum is None))
 
     pots = pedal.pots
     pedal.mix, pedal.level = pots[0], pots[2]
-    set_patch(round(pots[1] * (len(PATCHES) - 1)))
+    detect.sensitivity = (1 - pow(1 - pots[1], 2)) * (MAX_SENSITIVITY - MIN_SENSITIVITY) + MIN_SENSITIVITY
+
+    set_patch((int(not pedal.left_switch.value) << 1) | int(not pedal.right_switch.value))
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
@@ -183,7 +191,7 @@ while True:
         pedal.audio_in.record(buffer, len(buffer))
         state = detect.update(buffer, pedal.sample_rate)
         # TODO: Control bend with sustain state
-        if active_notenum is None and state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+        if state is synthio.EnvelopeState.ATTACK:
             note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))
         elif state is synthio.EnvelopeState.RELEASE:
             note_off()

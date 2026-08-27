@@ -33,7 +33,7 @@ while True:
     programs.update(pedal)
     
     pedal.bypass = not momentary and not toggle
-    pedal.led = not pedal.bypass
+    pedal.leds = not pedal.bypass
 
     pots = pedal.pots
     pedal.mix = pots[0]

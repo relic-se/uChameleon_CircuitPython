@@ -6,12 +6,17 @@ import digitalio
 import microcontroller
 import storage
 import supervisor
+import time
 import usb_audio
 import usb_cdc
 import usb_hid
 import usb_midi
 
-from uchameleon import _PIN_BTN0, _PIN_BTN1
+from uchameleon import _PIN_BTN0, _PIN_BTN1, _PIN_LED0
+
+# Initialize led indicator
+pin_led0 = digitalio.DigitalInOut(_PIN_LED0)
+pin_led0.switch_to_output()
 
 # Initialize button inputs
 pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
@@ -28,7 +33,7 @@ if not pin_btn1.value:
 # Rename device
 supervisor.set_usb_identification(
     manufacturer="relic-se",
-    product="μChameleon",
+    product="uChameleon",
 )
 
 # Mount drive, allow USB file access if left button is pressed
@@ -47,10 +52,10 @@ usb_cdc.enable(console=True, data=False)
 # Setup MIDI
 usb_midi.enable()
 usb_midi.set_names(
-    streaming_interface_name="μChameleon MIDI",
-    audio_control_interface_name="μChameleon Audio",
-    in_jack_name="μChameleon",
-    out_jack_name="μChameleon",
+    streaming_interface_name="uChameleon MIDI",
+    audio_control_interface_name="uChameleon Audio",
+    in_jack_name="uChameleon",
+    out_jack_name="uChameleon",
 )
 
 # Setup Audio
@@ -61,3 +66,12 @@ if supervisor.get_setting("USB_AUDIO", True):
         microphone=True,
         speaker=False,
     )
+
+# Long blink on led to indicated we're done with boot
+pin_led0.value = True
+time.sleep(0.5)
+pin_led0.value = False
+
+# Deinitialize pins
+for pin in (pin_led0, pin_btn0, pin_btn1):
+    pin.deinit()

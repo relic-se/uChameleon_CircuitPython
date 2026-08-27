@@ -58,7 +58,7 @@ while True:
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
-        pedal.led = not pedal.bypass
+        pedal.leds = not pedal.bypass
 
     pots = [x * (not pedal.bypass) for x in pedal.pots]
     phaser_effect.mix, distortion_effect.mix = pots[:2]

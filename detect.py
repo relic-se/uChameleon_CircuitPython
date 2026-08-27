@@ -35,13 +35,57 @@ def nearest_pow2(value: int) -> int:
             return value
         i += 1
 
-def fftfreq_index(data: np.ndarray, sample_rate: int):
+def fftfreq_index(data: np.ndarray, sample_rate: int) -> float:
     data = ulab.utils.spectrogram(data[:nearest_pow2(len(data))])
     data = data[1 : (len(data) // 2) - 1]
     freq = np.argmax(data) / len(data) * sample_rate / 4
     return freq
 
-def fftfreq_areas(data: np.ndarray, sample_rate: int, scale: float = 0.25, cutoff: float = 0.25) -> None:
+def fftfreq_weighted_mean(data: np.ndarray, sample_rate: int, window: int = 5, scale: float = 0.25) -> float:
+    # Determine buffer_size before performing FFT
+    buffer_size = nearest_pow2(len(data))
+
+    # Linear scale
+    scale = np.arange(scale, 1.0, (1.0 - scale) / (buffer_size / 2), dtype=np.float)[:buffer_size // 2]
+
+    # Perform Fourier Fast Transform (FFT) algorithm on audio signal
+    data = ulab.utils.spectrogram(data[:buffer_size])
+    
+    # Remove upper half of spectrogram
+    data = data[:len(data)//2]
+
+    # Clear first and last entries
+    data[0] = data[len(data) - 1] = 0.0
+
+    # Apply linear scale up to 1.0
+    data *= scale
+
+    # Find the index of the maximum value
+    index = np.argmax(data)
+
+    # Isolate the area
+    area = data[max(index - (window // 2), 0):min(index + (window // 2) + 1, len(data))]
+
+    # Linear distribution of indexes used to calculate weighted mean
+    dist = np.arange(len(area), dtype=np.int16)
+
+    # Get the center index using weighted mean
+    area_sum = np.sum(area)
+    if area_sum <= 0:
+        return None
+    weighted_index = np.sum(area * dist) / np.sum(area)
+
+    # Adjust index by weighted mean
+    index += weighted_index - 1
+
+    # Determine the minimum and maximum possible frequencies
+    min_freq = sample_rate / buffer_size
+    max_freq = sample_rate / 2  # nyquist
+
+    # Calculate frequency from index
+    return (max_freq - min_freq) * (index / (len(data) - 1)) + min_freq
+
+def fftfreq_areas(data: np.ndarray, sample_rate: int, scale: float = 0.25, cutoff: float = 0.25) -> float:
     # Determine buffer_size before performing FFT
     buffer_size = nearest_pow2(len(data))
 
@@ -180,15 +224,17 @@ class Detect:
 
     def __init__(
         self,
-        attack: float = 0.002,  # begins calculation when relative level is above this value
-        release: float = 0.0005,  # ends calculation when relative level is below this value
+        sensitivity: float = 0.25,
+        attack: float = 1,  # begins calculation when level (relative to sensitivity) is above this value
+        sustain: float = 0.9,  # if level dips below this threshold (relative to sensitivity) and then rises above attack again, it will be interpretted as a new note
+        release: float = 0.1,  # ends calculation when level (relative to sensitivity) is below this value
         impulse_threshold: float = 0.75,
-        buffer_size: int|None = None,
     ):
-        self._attack = min(max(attack, 0.0), 1.0)
-        self._release = min(max(release, 0.0), 1.0)
+        self.sensitivity = sensitivity
+        self._attack = min(max(attack, 0.0001), 1.0)
+        self._sustain = min(max(sustain, 0.0001), 1.0)
+        self._release = min(max(release, 0.0001), 1.0)
         self._impulse_threshold = min(max(impulse_threshold, 0.0), 1.0)
-        self._buffer_size = buffer_size
 
         self._level = MovingAverage(count=3, weighted=False)
         self._frequency = MovingAverage(count=16, weighted=False)
@@ -196,21 +242,32 @@ class Detect:
         self.reset()
 
     def reset(self) -> None:
-        self._data = np.ndarray([]) if self._buffer_size else None
-
         self._level.reset()
         self._frequency.reset()
 
-        self._active = False
+        self._state = None
         self._notenum = self._notename = self._cents = None
 
     @property
+    def sensitivity(self) -> float:
+        return self._sensitivity
+
+    @sensitivity.setter
+    def sensitivity(self, value: float) -> None:
+        self._sensitivity = min(max(value, 0.0001), 0.9999)
+
+    @property
     def active(self) -> bool:
-        return self._active
+        return self._state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}
 
     @property
     def level(self) -> float:
-        return self._level.value
+        value = self._level.value
+        return min(value / (1 - self._sensitivity), 1.0) if value is not None else 0.0
+
+    @property
+    def state(self) -> synthio.EnvelopeState|None:
+        return self._state
 
     @property
     def frequency(self) -> float|None:
@@ -248,51 +305,50 @@ class Detect:
         self._notenum = self._notename = self._cents = None  # Go ahead and dump our cached values        
 
         # Convert our data to an np.ndarray object with float values ranging from -1.0 to 1.0
-        buffer_size = min(len(buffer), self._buffer_size) if self._buffer_size is not None else len(buffer)
-        data = np.array(buffer[:buffer_size]) / 32768  # limit to max buffer size
+        data = np.array(buffer) / 32768
         data = decouple(data)
 
         # Calculate level
         self._level.update(level_abs(data))
         
         # Decide whether or not to perform calculations using basic noise gate
-        state = None
-        if not self._active and self._level.value > self._attack:
-            self._active = True
+        state = self._state
+        level = self.level
+        if state in {None, synthio.EnvelopeState.SUSTAIN, synthio.EnvelopeState.RELEASE} and level >= self._attack:
             state = synthio.EnvelopeState.ATTACK
-        elif self._active and self._level.value < self._release:
-            self._active = False
+        elif state is not synthio.EnvelopeState.RELEASE and level <= self._release:
             self._frequency.reset()
             state = synthio.EnvelopeState.RELEASE
-        if not self._active:
-            return state
-
-        # Normalize level
-        data = normalize(data)
-
-        # Clip to impulse start
-        if state == synthio.EnvelopeState.ATTACK:
-            impulse_start = 0
-            for i, x in enumerate(data):
-                if abs(x) >= self._impulse_threshold:
-                    impulse_start = i
-                    break
-            data = data[impulse_start:]
-
-        # Extend buffer with new data
-        if self._data is not None:
-            start_index = len(data) if len(self._data) > self._buffer_size - len(data) else 0
-            data = np.concatenate((self._data[start_index:], data))
-            self._data = data
-
-        # Identify most prominent frequency
-        # frequency = fftfreq_index(data, sample_rate)
-        # frequency = fftfreq_areas(data, sample_rate)
-        frequency = fftfreq_crossings_threshold(data, sample_rate)
-        if frequency is None:
-            return None
-
-        self._frequency.update(frequency)
-        if state is not synthio.EnvelopeState.ATTACK:
+        elif state == synthio.EnvelopeState.ATTACK and level <= self._sustain:
             state = synthio.EnvelopeState.SUSTAIN
+
+        # Process signal if we're active
+        if state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+
+            # Normalize level
+            data = normalize(data)
+
+            # Clip to impulse start
+            if state == synthio.EnvelopeState.ATTACK:
+                impulse_start = 0
+                for i, x in enumerate(data):
+                    if abs(x) >= self._impulse_threshold:
+                        impulse_start = i
+                        break
+                data = data[impulse_start:]
+
+            # Identify most prominent frequency
+            # frequency = fftfreq_index(data, sample_rate)
+            # frequency = fftfreq_areas(data, sample_rate)
+            # frequency = fftfreq_crossings_threshold(data, sample_rate)
+            frequency = fftfreq_weighted_mean(data, sample_rate)
+            if frequency is None:
+                return None
+
+            self._frequency.update(frequency)
+
+        # Return new state on change
+        if state == self._state:
+            return None
+        self._state = state
         return state

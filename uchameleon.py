@@ -7,38 +7,54 @@ from audiobusio import I2SOut
 from audioi2sin import I2SIn
 from audiomixer import Mixer
 import board
-from busio import I2C
+from busio import I2C, UART
 import digitalio
 from pwmio import PWMOut
 import supervisor
+import time
 from usb_audio import usb_microphone
+import usb_midi
 
 from adafruit_debouncer import Button, Debouncer
-from relic_tlv320aic3204 import TLV320AIC3204, INPUT_1, IMPEDANCE_40K
+from adafruit_midi import MIDI, MIDIMessage
+from relic_tlv320aic3204 import TLV320AIC3204, INPUT_2, INPUT_3, IMPEDANCE_40K
 
-_PIN_BTN0 = board.GP10
-_PIN_BTN1 = board.GP11
+try:
+    from typing import Optional, Tuple
+except ImportError:
+    pass
 
-_PIN_SW0 = board.GP12
-_PIN_SW1 = board.GP19
+_PIN_UART_TX = board.GP0
+_PIN_UART_RX = board.GP1
 
-_PIN_LED = board.GP22
+_PIN_STEMMA_SDA = board.GP2
+_PIN_STEMMA_SCL = board.GP3
 
-_PIN_POT0 = board.GP26
-_PIN_POT1 = board.GP27
-_PIN_POT2 = board.GP28
+_PIN_RST = board.GP4
+_PIN_MCLK = board.GP5
+_PIN_BCLK = board.GP6
+_PIN_WCLK = board.GP7
+_PIN_DOUT = board.GP8
+_PIN_DIN = board.GP9
+
+_PIN_BYPASS = board.GP10
+
+_PIN_BTN0 = board.GP12
+_PIN_BTN1 = board.GP13
+
+_PIN_SW0 = board.GP14
+_PIN_SW1 = board.GP15
+
+_PIN_LED0 = board.GP16
+_PIN_LED1 = board.GP17
 
 _PIN_SDA = board.GP20
 _PIN_SCL = board.GP21
 
-_PIN_RST = board.GP2
-_PIN_MCLK = board.GP3
-_PIN_BCLK = board.GP4
-_PIN_WCLK = board.GP5
-_PIN_DOUT = board.GP6
-_PIN_DIN = board.GP7
-
-_PIN_BYPASS = board.GP8
+_PIN_ADC_MUX = board.GP22
+_PIN_ADC0 = board.GP26
+_PIN_ADC1 = board.GP27
+_PIN_ADC2 = board.GP28
 
 class uChameleon:
 
@@ -51,16 +67,46 @@ class uChameleon:
         mix: float = 0.0,
         level: float = 1.0,
         bypass: bool = True,
+        pot_count: int = 3,
     ) -> None:
         self._sample_rate = sample_rate if sample_rate is not None else int(supervisor.get_setting("SAMPLE_RATE", 44100))
         self._mono = mono if mono is not None else bool(supervisor.get_setting("MONO", True))
+        self._pot_count = pot_count
+
+        # Setup MIDI
+        self._uart = UART(
+            rx=_PIN_UART_RX,
+            tx=_PIN_UART_TX,
+            baudrate=31250,
+            timeout=0.001,
+        )
+        self._midi_uart = MIDI(
+            midi_in=self._uart,
+            midi_out=self._uart,
+        )
+        self._midi_usb = (
+            MIDI(
+                midi_in=usb_midi.ports[0],
+                midi_out=usb_midi.ports[1],
+            )
+            if len(usb_midi.ports) >= 2
+            else None
+        )
+
+        # Setup STEMMA QT
+        try:
+            self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA),
+        except RuntimeError:
+            self._stemma = None
 
         # Setup Controls
-        self._led = PWMOut(
-            _PIN_LED,
-            duty_cycle=0,
-            frequency=44100*2,
-        )
+        self._leds = tuple([
+            PWMOut(
+                pin,
+                duty_cycle=0,
+                frequency=44100*2,
+            ) for pin in (_PIN_LED0, _PIN_LED1)
+        ])
 
         _pin_btn0 = digitalio.DigitalInOut(_PIN_BTN0)
         _pin_btn0.switch_to_input(pull=digitalio.Pull.UP)
@@ -78,12 +124,13 @@ class uChameleon:
         _pin_sw1.switch_to_input(pull=digitalio.Pull.UP)
         self._right_switch = Debouncer(_pin_sw1)
 
-        self._pots = (
-            AnalogIn(_PIN_POT0),
-            AnalogIn(_PIN_POT1),
-            AnalogIn(_PIN_POT2)
-        )
+        self._pin_adc_mux = digitalio.DigitalInOut(_PIN_ADC_MUX)
+        self._pin_adc_mux.switch_to_output()
 
+        self._adcs = tuple([
+            AnalogIn(pin) for pin in (_PIN_ADC0, _PIN_ADC1, _PIN_ADC2)
+        ])
+        
         # Configure Codec
         self._codec = TLV320AIC3204(
             i2c=I2C(_PIN_SCL, _PIN_SDA),
@@ -121,10 +168,10 @@ class uChameleon:
 
         # Connect IN1L to Left MICPGA
         input_gain = input_gain if input_gain is not None else float(supervisor.get_setting("INPUT_GAIN", 0.0))  # dB
-        self._codec.connect_left_input(INPUT_1, IMPEDANCE_40K)
+        self._codec.connect_left_input(INPUT_2, IMPEDANCE_40K, balanced=True)
         self._codec.left_input_gain = input_gain  # dB
         if not self._mono:
-            self._codec.connect_right_input(INPUT_1, IMPEDANCE_40K)
+            self._codec.connect_right_input(INPUT_3, IMPEDANCE_40K, balanced=True)
             self._codec.right_input_gain = input_gain  # dB
 
         # Setup DAC Output
@@ -219,12 +266,39 @@ class uChameleon:
         return supervisor.runtime.usb_connected and usb_microphone is not None
 
     @property
-    def led(self) -> float:
-        return self._led.duty_cycle / (2 ** 16 - 1)
+    def stemma(self) -> I2C|None:
+        return self._stemma
 
-    @led.setter
-    def led(self, value: float) -> None:
-        self._led.duty_cycle = int((2 ** 16 - 1) * min(max(value, 0.0), 1.0))
+    def get_midi_messages(self) -> Tuple[Optional[MIDIMessage]]:
+        msgs = []
+        while (
+            msg := (self._midi_usb.receive() if self._midi_usb is not None else None)
+            or self._midi_uart.receive()
+        ):
+            msgs.append(msg)
+        return tuple(msgs)
+
+    def send_midi_message(self, message: MIDIMessage) -> None:
+        if self._midi_usb is not None:
+            self._midi_usb.send(message)
+        self._midi_uart.send(message)
+
+    @property
+    def leds(self) -> tuple:
+        return tuple([
+            led.duty_cycle / (2 ** 16 - 1) for led in self._leds
+        ])
+
+    @leds.setter
+    def leds(self, value: bool|int|float|tuple) -> None:
+        if type(value) in {bool, int}:
+            value = float(value)
+        if type(value) is float:
+            value = (value,)
+        value = tuple([int((2 ** 16 - 1) * min(max(x, 0.0), 1.0)) for x in value])
+        if len(value) > 0:
+            for i, led in enumerate(self._leds):
+                led.duty_cycle = value[i % len(value)]
 
     @property
     def left_button(self) -> Button:
@@ -244,7 +318,14 @@ class uChameleon:
 
     @property
     def pots(self) -> tuple:
-        return tuple([adc.value / (2 ** 16 - 1) for adc in self._pots])
+        values = []
+        for i in range(self._pot_count):
+            if i == 3:
+                self._pin_adc_mux.value = True  # switch to next bank
+                time.sleep(0.001)
+            values.append(self._adcs[i].value / (2 ** 16 - 1))
+        self._pin_adc_mux.value = False  # prepare for next read
+        return tuple(values)
 
     @property
     def codec(self) -> TLV320AIC3204:

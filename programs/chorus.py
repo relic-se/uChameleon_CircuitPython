@@ -87,4 +87,4 @@ while True:
     elif pedal.left_button.released:
         double = False
 
-    pedal.led = ((lfo.value - lfo.offset) / lfo.scale * pots[2] + 1) / 2 * (not pedal.bypass)
+    pedal.leds = ((lfo.value - lfo.offset) / lfo.scale * pots[2] + 1) / 2 * (not pedal.bypass)

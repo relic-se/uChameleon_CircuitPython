@@ -12,6 +12,7 @@ import synthio
 import os
 
 from detect import Detect, fftfreq_areas as fftfreq
+import programs
 import relic_waveform
 from uchameleon import uChameleon
 
@@ -20,10 +21,13 @@ BUFFER_SIZE = 256
 
 DIR = "/samples"
 
+MIN_SENSITIVITY = 0.75
+MAX_SENSITIVITY = 1.0
+
 # Read available samples
 def valid_sample(filename: str) -> bool:
     return type(filename) is str and filename and not filename.startswith(".") and not filename.startswith("_") and filename.endswith(".wav")
-SAMPLE_PATHS = tuple([DIR + "/" + x for x in sorted(list(filter(lambda x: valid_sample(x), os.listdir(DIR))))])
+SAMPLE_PATHS = tuple([DIR + "/" + x for x in sorted(list(filter(lambda x: valid_sample(x), os.listdir(DIR))))[:4]])
 
 def determine_root(path: str) -> float:
     return fftfreq(*relic_waveform.from_wav(path, max_size=8192))
@@ -89,17 +93,21 @@ def press(frequency: float) -> None:
     global pressed
     sampler.rate = frequency / sample_root
     if not pressed:
-        mixer.play(resampler, loop=not pedal.left_switch.value)
+        mixer.play(resampler)
     pressed = True
 
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
-    pedal.led = (not pedal.bypass) / (1 + (not pressed))
+    programs.update(pedal)
+
+    pedal.leds = (not pedal.bypass) / (1 + (not pressed))
 
     pots = pedal.pots
     pedal.mix, pedal.level = pots[0], pots[2]
-    set_sample(round(pots[1] * (len(SAMPLES) - 1)))
+    detect.sensitivity = (1 - pow(1 - pots[1], 2)) * (MAX_SENSITIVITY - MIN_SENSITIVITY) + MIN_SENSITIVITY
+
+    set_sample((int(not pedal.left_switch.value) << 1) | int(not pedal.right_switch.value))
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
@@ -110,7 +118,7 @@ while True:
     if not pedal.bypass:
         pedal.audio_in.record(buffer, len(buffer))
         state = detect.update(buffer, pedal.sample_rate)
-        if state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+        if state is synthio.EnvelopeState.ATTACK:
             press(detect.frequency)
         elif state is synthio.EnvelopeState.RELEASE:
             release()

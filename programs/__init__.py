@@ -5,6 +5,7 @@
 import microcontroller
 import os
 import supervisor
+import time
 
 from uchameleon import uChameleon
 
@@ -21,14 +22,22 @@ def _save(value: str) -> None:
         pass
     else:
         try:
-            storage.remount("/", readonly=False)
-            with open("/settings.toml", "r+") as f:
+            with open("/settings.toml", "r") as f:
                 data = toml.load(f)
-                data[KEY] = value
-                f.seek(0)
+            data[KEY] = value
+
+            try:
+                storage.remount("/", readonly=False)
+            except RuntimeError:
+                pass
+
+            with open("/settings.toml", "w") as f:
                 toml.dump(data, f)
-                f.truncate()
-            storage.remount("/", readonly=True)
+            
+            try:
+                storage.remount("/", readonly=True)
+            except RuntimeError:
+                pass
         except RuntimeError:
             pass
 
@@ -82,10 +91,20 @@ def load(program: str|None = None, save: bool = True) -> None:
 def load_next(save: bool = True) -> None:
     load(get_next(), save)
 
+_first_update = True
 _left_long_press = False
 _right_long_press = False
 def update(device: uChameleon) -> None:
-    global _left_long_press, _right_long_press
+    global _first_update, _left_long_press, _right_long_press
+
+    if _first_update:
+        _first_update = False
+        # Two short blinks to indicate program is ready
+        for i in range(2):
+            device.leds = True
+            time.sleep(0.2)
+            device.leds = False
+            time.sleep(0.2)
     
     if device.left_button.long_press:
         _left_long_press = True
@@ -98,6 +117,9 @@ def update(device: uChameleon) -> None:
         _right_long_press = False
 
     if _left_long_press and _right_long_press:
+        device.bypass = True
+        device.update()
+        
         try:
             load_next()
         except OSError:

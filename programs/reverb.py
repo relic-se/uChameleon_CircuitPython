@@ -84,5 +84,5 @@ while True:
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
-        pedal.led = not pedal.bypass
+        pedal.leds = not pedal.bypass
         effect_pitch.mix = PITCH_MIX * (not pedal.right_switch.value) * (not pedal.bypass)
