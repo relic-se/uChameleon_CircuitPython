@@ -183,7 +183,6 @@ class Detect:
         attack: float = 0.002,  # begins calculation when relative level is above this value
         release: float = 0.0005,  # ends calculation when relative level is below this value
         impulse_threshold: float = 0.75,
-        buffer_size: int|None = None,
     ):
         self._attack = min(max(attack, 0.0), 1.0)
         self._release = min(max(release, 0.0), 1.0)
@@ -196,8 +195,6 @@ class Detect:
         self.reset()
 
     def reset(self) -> None:
-        self._data = np.ndarray([]) if self._buffer_size else None
-
         self._level.reset()
         self._frequency.reset()
 
@@ -248,8 +245,7 @@ class Detect:
         self._notenum = self._notename = self._cents = None  # Go ahead and dump our cached values        
 
         # Convert our data to an np.ndarray object with float values ranging from -1.0 to 1.0
-        buffer_size = min(len(buffer), self._buffer_size) if self._buffer_size is not None else len(buffer)
-        data = np.array(buffer[:buffer_size]) / 32768  # limit to max buffer size
+        data = np.array(buffer) / 32768
         data = decouple(data)
 
         # Calculate level
@@ -279,18 +275,7 @@ class Detect:
                     break
             data = data[impulse_start:]
 
-        # Extend buffer with new data
-        if self._data is not None:
-            start_index = len(data) if len(self._data) > self._buffer_size - len(data) else 0
-            data = np.concatenate((self._data[start_index:], data))
-            self._data = data
-
-        # Identify most prominent frequency
-        # frequency = fftfreq_index(data, sample_rate)
-        # frequency = fftfreq_areas(data, sample_rate)
-        frequency = fftfreq_crossings_threshold(data, sample_rate)
-        if frequency is None:
-            return None
+            # Identify most prominent frequency
 
         self._frequency.update(frequency)
         if state is not synthio.EnvelopeState.ATTACK:
