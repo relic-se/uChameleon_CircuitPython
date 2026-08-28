@@ -10,7 +10,7 @@ import synthio
 
 from synthtools import Patch, SubtractiveSynth
 
-from detect import Detect
+from detect import Note
 import programs
 from uchameleon import uChameleon
 
@@ -121,7 +121,7 @@ pedal = uChameleon(
 )
 
 # Setup chromatic note detector
-detect = Detect()
+detect = Note(BUFFER_SIZE, pedal.sample_rate)
 
 # Setup audio objects
 mixer = Mixer(  # used for buffer
@@ -189,7 +189,7 @@ while True:
 
     if not pedal.bypass:
         pedal.audio_in.record(buffer, len(buffer))
-        state = detect.update(buffer, pedal.sample_rate)
+        state = detect.update(buffer)
         # TODO: Control bend with sustain state
         if state is synthio.EnvelopeState.ATTACK:
             note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))

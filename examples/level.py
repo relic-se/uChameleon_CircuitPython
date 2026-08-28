@@ -5,7 +5,7 @@
 import array
 import ulab.numpy as np
 
-from detect import decouple, level_abs
+from detect import decouple_signal, calculate_level
 from uchameleon import uChameleon
 
 # Constants
@@ -21,14 +21,31 @@ level = 0.0
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
     pedal.update()
+    
+    sensitivity, _, _ = pedal.pots
 
     if pedal.right_button.released:
         pedal.bypass = not pedal.bypass
 
     if not pedal.bypass:
+
+        # Record ADC input into buffer
         pedal.audio_in.record(buffer, len(buffer))
-        data = np.array(buffer) / 32768
-        data = decouple(data)
-        level = level_abs(data)
+
+        # Convert integer data to float from -1.0 to 1.0
+        data = np.array(buffer, dtype=np.float) / 32768
+
+        # Re-center the signal around the mean
+        data = decouple_signal(data)
+
+        # Calculate the level
+        level = calculate_level(data)
+
+        # Adjust based on sensitivity
+        level /= max(pow(1 - sensitivity, 2), 0.001)
+
+        # Clip at 1.0
+        level = min(level, 1.0)
+        print(level)
 
     pedal.leds = (not pedal.bypass) * level

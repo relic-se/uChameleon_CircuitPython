@@ -11,7 +11,7 @@ from audiospeed import Resampler, SpeedChanger
 import synthio
 import os
 
-from detect import Detect, fftfreq_areas as fftfreq
+from detect import Note, calculate_frequency
 import programs
 import relic_waveform
 from uchameleon import uChameleon
@@ -30,7 +30,7 @@ def valid_sample(filename: str) -> bool:
 SAMPLE_PATHS = tuple([DIR + "/" + x for x in sorted(list(filter(lambda x: valid_sample(x), os.listdir(DIR))))[:4]])
 
 def determine_root(path: str) -> float:
-    return fftfreq(*relic_waveform.from_wav(path, max_size=8192))
+    return calculate_frequency(*relic_waveform.from_wav(path, max_size=8192))
 SAMPLE_ROOTS = tuple([determine_root(x) for x in SAMPLE_PATHS])
 
 SAMPLES = tuple([WaveFile(x) for x in SAMPLE_PATHS])
@@ -45,7 +45,7 @@ pedal = uChameleon(
 )
 
 # Setup frequency detector
-detect = Detect()
+detect = Note(BUFFER_SIZE, pedal.sample_rate)
 
 # Setup audio objects
 sampler = resampler = None  # will be SpeedChanger & Resampler when a sample is loaded
@@ -117,8 +117,8 @@ while True:
 
     if not pedal.bypass:
         pedal.audio_in.record(buffer, len(buffer))
-        state = detect.update(buffer, pedal.sample_rate)
-        if state is synthio.EnvelopeState.ATTACK:
+        state = detect.update(buffer)
+        if detect.active:
             press(detect.frequency)
         elif state is synthio.EnvelopeState.RELEASE:
             release()
