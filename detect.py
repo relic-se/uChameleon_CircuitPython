@@ -58,12 +58,12 @@ if not BLINKA:
 
         return tuple(midpoints)
 
-    def _find_peaks(data: np.ndarray, height: float|None = None, sort: bool = False) -> tuple[float]:
+    def _find_peaks(data: np.ndarray, height: float|None = None, sort: bool = True) -> tuple[float]:
         peaks = _local_maxima_1d(data)
         peak_heights = np.array([data[i] for i in peaks], dtype=_DTYPE_FLOAT)
 
         if height is None:
-            height = np.std(data)
+            height = 7 * np.std(data)
 
         # Remove elements which are less than the height
         peak_heights = np.where(peak_heights > height, peak_heights, 0)
@@ -81,9 +81,9 @@ else:
     def _fftfreq(size: int, spacing: float = 1.0) -> np.ndarray:
         return np.fft.fftfreq(size, spacing)[:size // 2]
 
-    def _find_peaks(data: np.ndarray, height: float|None = None, sort: bool = False) -> tuple[float]:
+    def _find_peaks(data: np.ndarray, height: float|None = None, sort: bool = True) -> tuple[float]:
         if height is None:
-            height = np.std(data)
+            height = 7 * np.std(data)
         peaks = find_peaks(data, height=height)
         if not sort:
             return tuple(peaks[0])
