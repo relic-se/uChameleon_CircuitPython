@@ -8,6 +8,7 @@ from audioi2sin import I2SIn
 from audiomixer import Mixer
 import board
 from busio import I2C, UART
+import math
 import digitalio
 from pwmio import PWMOut
 import supervisor
@@ -23,6 +24,17 @@ try:
     from typing import Optional, Tuple
 except ImportError:
     pass
+
+_MIN_WET_DB = -63.5  # minimum digital volume of the DAC
+_MIN_DRY_DB = -30.1  # minimum analog volume of the input passthrough
+_MUTE_DB = -99.9
+
+def _gain_to_db(gain: float, minimum: float) -> float:
+    """Convert a linear gain to decibels. Anything below the minimum is muted."""
+    if gain <= 0.0:
+        return _MUTE_DB
+    db = 20.0 * math.log(gain, 10)
+    return db if db >= minimum else _MUTE_DB
 
 _PIN_UART_TX = board.GP0
 _PIN_UART_RX = board.GP1
@@ -218,6 +230,8 @@ class uChameleon:
         self._bypass_changed = True
         self._mix = mix
         self._level = level
+        self._wet_step = None
+        self._dry_step = None
         self._needs_update = True
         self._update_codec()
 
@@ -229,20 +243,36 @@ class uChameleon:
             return
         self._needs_update = False
 
-        dac_muted = self._bypass or self._mix <= 0.01 or self._level <= 0.01
-        dac_volume = -63.5 * (1.0 - min(self._mix * 2.0, 1.0) * self._level)
+        # Wet and dry gain share the same crossfade and level law so that the balance between the
+        # two is independent of the level
+        level = 0.0 if self._level <= 0.01 else self._level
+        wet = 0.0 if self._bypass or self._mix <= 0.01 else min(self._mix * 2.0, 1.0) * level
+        dry = 1.0 if self._bypass else (
+            0.0 if self._mix >= 0.99 else min(2.0 - self._mix * 2.0, 1.0) * level
+        )
+        wet_db = _gain_to_db(wet, _MIN_WET_DB)
+        dry_db = _gain_to_db(dry, _MIN_DRY_DB)
 
-        self._codec.left_dac_muted = dac_muted
-        self._codec.left_dac_volume = dac_volume
-        if not self._mono:
-            self._codec.right_dac_muted = dac_muted
-            self._codec.right_dac_volume = dac_volume
+        # Only write to the codec when a volume moves by at least half a decibel
+        wet_step = round(wet_db * 2)
+        if wet_step != self._wet_step:
+            self._wet_step = wet_step
+            dac_muted = wet_db < _MIN_WET_DB
+            # Set the volume before unmuting so that the DAC never plays at a stale volume
+            if not dac_muted:
+                self._codec.left_dac_volume = wet_db
+            self._codec.left_dac_muted = dac_muted
+            if not self._mono:
+                if not dac_muted:
+                    self._codec.right_dac_volume = wet_db
+                self._codec.right_dac_muted = dac_muted
 
-        input_volume = -99.9 if not self._bypass and self._mix >= 0.99 else (-30.1 * (1.0 - min(2.0 - self._mix * 2.0, 1.0) * self._level)) * (not self._bypass)
-        
-        self._codec.left_input_passthrough_volume = input_volume
-        if not self._mono:
-            self._codec.right_input_passthrough_volume = input_volume
+        dry_step = round(dry_db * 2)
+        if dry_step != self._dry_step:
+            self._dry_step = dry_step
+            self._codec.left_input_passthrough_volume = dry_db
+            if not self._mono:
+                self._codec.right_input_passthrough_volume = dry_db
 
         if self.usb_connected:
             self._usb_mixer.voice[0].level = self._level
