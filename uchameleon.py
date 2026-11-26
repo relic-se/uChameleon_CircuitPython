@@ -131,23 +131,23 @@ class uChameleon:
             AnalogIn(pin) for pin in (_PIN_ADC0, _PIN_ADC1, _PIN_ADC2)
         ])
         
+        # Configure I2S Bus (the clocks must be running before the codec is configured)
+        self._audio_in = I2SIn(
+            bit_clock=_PIN_BCLK,
+            word_select=_PIN_WCLK,
+            data=_PIN_DIN,
+            sample_rate=self._sample_rate,
+            bit_depth=16,
+            samples_signed=True,
+            mono=self._mono,
+        )
+
         # Configure Codec
         self._codec = TLV320AIC3204(
             i2c=I2C(_PIN_SCL, _PIN_SDA),
             mclk=_PIN_MCLK,
             rst=_PIN_RST,
             sample_rate=self._sample_rate,
-        )
-
-        # Configure I2S Bus
-        self._audio_in = I2SIn(
-            bit_clock=_PIN_BCLK,
-            word_select=_PIN_WCLK,
-            data=_PIN_DIN,
-            sample_rate=self._codec.sample_rate,
-            bit_depth=self._codec.bit_depth,
-            samples_signed=True,
-            mono=self._mono,
         )
         
         if not self.usb_connected:
