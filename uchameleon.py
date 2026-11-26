@@ -95,7 +95,7 @@ class uChameleon:
 
         # Setup STEMMA QT
         try:
-            self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA),
+            self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA)
         except RuntimeError:
             self._stemma = None
 
@@ -149,7 +149,7 @@ class uChameleon:
         # Configure Codec. Without a main clock, the codec generates its clocks from BCLK which
         # keeps it synchronized with the I2S bus.
         self._codec = TLV320AIC3204(
-            i2c=I2C(_PIN_SCL, _PIN_SDA),
+            i2c=I2C(_PIN_SCL, _PIN_SDA, frequency=400_000),
             rst=_PIN_RST,
             sample_rate=self._sample_rate,
         )
