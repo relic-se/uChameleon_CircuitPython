@@ -142,14 +142,18 @@ class uChameleon:
             mono=self._mono,
         )
 
-        # Configure Codec
+        # Hold the unused main clock input of the codec low
+        self._pin_mclk = digitalio.DigitalInOut(_PIN_MCLK)
+        self._pin_mclk.switch_to_output(False)
+
+        # Configure Codec. Without a main clock, the codec generates its clocks from BCLK which
+        # keeps it synchronized with the I2S bus.
         self._codec = TLV320AIC3204(
             i2c=I2C(_PIN_SCL, _PIN_SDA),
-            mclk=_PIN_MCLK,
             rst=_PIN_RST,
             sample_rate=self._sample_rate,
         )
-        
+
         if not self.usb_connected:
             self._audio_out = I2SOut(
                 bit_clock=_PIN_BCLK,
