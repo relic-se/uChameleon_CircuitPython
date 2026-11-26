@@ -111,10 +111,6 @@ PATCHES = (
     )
 )
 
-# Overclock
-import microcontroller
-microcontroller.cpu.frequency = 300_000_000
-
 # Initialize Hardware
 pedal = uChameleon(
     mix=1.0,
