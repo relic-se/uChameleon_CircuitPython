@@ -9,9 +9,9 @@ from audiomixer import Mixer
 import audiotap
 import synthio
 
+from relic_audiodetect.note import Note
 from synthtools import Patch, SubtractiveSynth
 
-from detect import Detect
 import programs
 from uchameleon import uChameleon
 
@@ -118,7 +118,7 @@ pedal = uChameleon(
 )
 
 # Setup chromatic note detector
-detect = Detect()
+detect = Note(BUFFER_SIZE, pedal.sample_rate)
 
 # Setup audio objects
 mixer = Mixer(
@@ -196,7 +196,7 @@ while True:
         elif tap.available >= BUFFER_SIZE:
             while tap.available >= BUFFER_SIZE:
                 tap.readinto(buffer)  # skip to the latest audio if the loop is behind
-            state = detect.update(buffer, pedal.sample_rate)
+            state = detect.update(buffer)
             # TODO: Control bend with sustain state
             if state is synthio.EnvelopeState.ATTACK:
                 note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))
