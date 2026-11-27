@@ -35,7 +35,8 @@ for name, attributes in {
 }.items():
     module = types.ModuleType(name)
     for attribute in attributes:
-        setattr(module, attribute, None)
+        # Classes must be real types, since annotations like `I2C|None` are evaluated on import
+        setattr(module, attribute, type(attribute, (), {}) if attribute[0].isupper() and not attribute.isupper() else None)
     sys.modules[name] = module
 sys.modules["board"].__getattr__ = lambda name: name  # any pin name
 sys.modules["supervisor"].get_setting = lambda key, default=None: False  # no USB audio
