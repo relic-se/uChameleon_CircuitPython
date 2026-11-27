@@ -6,10 +6,15 @@ import array
 import math
 import synthio
 import ulab.numpy as np
-import ulab.utils
 
 _LOG2_A4 = math.log(440, 2)
 _NOTE_NAMES = ["A", "A#/Bb", "B", "C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab"]
+
+def spectrum(data: np.ndarray) -> np.ndarray:
+    # Magnitude of each frequency bin. Calculated from the FFT directly because the bins returned by
+    # `ulab.utils.spectrogram` are not spaced consistently between versions of ulab.
+    real, imag = np.fft.fft(data)
+    return np.sqrt(real * real + imag * imag)
 
 def decouple(data: np.ndarray) -> np.ndarray:
     return data - np.mean(data)
@@ -36,7 +41,7 @@ def nearest_pow2(value: int) -> int:
         i += 1
 
 def fftfreq_index(data: np.ndarray, sample_rate: int) -> float:
-    data = ulab.utils.spectrogram(data[:nearest_pow2(len(data))])
+    data = spectrum(data[:nearest_pow2(len(data))])
     data = data[1 : (len(data) // 2) - 1]
     freq = np.argmax(data) / len(data) * sample_rate / 4
     return freq
@@ -49,7 +54,7 @@ def fftfreq_weighted_mean(data: np.ndarray, sample_rate: int, window: int = 5, s
     scale = np.arange(scale, 1.0, (1.0 - scale) / (buffer_size / 2), dtype=np.float)[:buffer_size // 2]
 
     # Perform Fourier Fast Transform (FFT) algorithm on audio signal
-    data = ulab.utils.spectrogram(data[:buffer_size])
+    data = spectrum(data[:buffer_size])
     
     # Remove upper half of spectrogram
     data = data[:len(data)//2]
@@ -64,7 +69,8 @@ def fftfreq_weighted_mean(data: np.ndarray, sample_rate: int, window: int = 5, s
     index = np.argmax(data)
 
     # Isolate the area
-    area = data[max(index - (window // 2), 0):min(index + (window // 2) + 1, len(data))]
+    start = max(index - (window // 2), 0)
+    area = data[start:min(index + (window // 2) + 1, len(data))]
 
     # Linear distribution of indexes used to calculate weighted mean
     dist = np.arange(len(area), dtype=np.int16)
@@ -75,15 +81,11 @@ def fftfreq_weighted_mean(data: np.ndarray, sample_rate: int, window: int = 5, s
         return None
     weighted_index = np.sum(area * dist) / np.sum(area)
 
-    # Adjust index by weighted mean
-    index += weighted_index - 1
+    # Move to the weighted mean of the area
+    index = start + weighted_index
 
-    # Determine the minimum and maximum possible frequencies
-    min_freq = sample_rate / buffer_size
-    max_freq = sample_rate / 2  # nyquist
-
-    # Calculate frequency from index
-    return (max_freq - min_freq) * (index / (len(data) - 1)) + min_freq
+    # Each index of the spectrum is a step of sample_rate / buffer_size
+    return index * sample_rate / buffer_size
 
 def fftfreq_areas(data: np.ndarray, sample_rate: int, scale: float = 0.25, cutoff: float = 0.25) -> float:
     # Determine buffer_size before performing FFT
@@ -96,7 +98,7 @@ def fftfreq_areas(data: np.ndarray, sample_rate: int, scale: float = 0.25, cutof
     scale = np.arange(scale, 1.0, (1.0 - scale) / (buffer_size / 2), dtype=np.float)[:buffer_size // 2]
 
     # Perform Fourier Fast Transform (FFT) algorithm on audio signal
-    data = ulab.utils.spectrogram(data[:buffer_size])
+    data = spectrum(data[:buffer_size])
     
     # Remove upper half of spectrogram
     data = data[:len(data)//2]
@@ -298,7 +300,7 @@ class Detect:
             return self._cents
         if (notenum := self.notenum) is None:
             return None
-        self._cents = 1200.0 * math.log(self._frequency.value / synthio.midi_to_hz(notenum))
+        self._cents = 1200.0 * math.log(self._frequency.value / synthio.midi_to_hz(notenum), 2)
         return self._cents
 
     def update(self, buffer: array.array, sample_rate: int) -> synthio.EnvelopeState|None:
