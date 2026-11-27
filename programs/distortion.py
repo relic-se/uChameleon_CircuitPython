@@ -9,6 +9,8 @@ from uchameleon import uChameleon
 import programs
 
 # Constants
+INPUT_FILTER = 40  # hz
+
 MIN_FILTER = 600
 MAX_FILTER = 12000
 
@@ -29,6 +31,14 @@ pedal = uChameleon(
 )
 
 # Audio Objects
+
+# Removes the DC offset of the ADC, which would otherwise be amplified by the boost and make the
+# distortion clip asymmetrically
+input_filter = Filter(
+    filter=synthio.Biquad(synthio.FilterMode.HIGH_PASS, INPUT_FILTER),
+    **pedal.audiosample_args,
+)
+
 distortion_effect = Distortion(
     soft_clip=True,
     mix=not pedal.usb_connected,
@@ -45,7 +55,9 @@ filter_effect = Filter(
 pedal.play(
     filter_effect.play(
         distortion_effect.play(
-            pedal.audio_in
+            input_filter.play(
+                pedal.audio_in
+            )
         )
     )
 )
