@@ -39,7 +39,7 @@ Checks the firmware that is installed on the device and exits with an error if a
 - The distortion chain does not turn a DC offset at the input into even harmonics.
 
 Use `--lib /folder` to load modules from another folder on the device first, for example to check a
-changed `detect.py` before installing it.
+changed library before installing it.
 
 ## Program checks
 

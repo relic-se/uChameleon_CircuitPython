@@ -9,18 +9,23 @@ from audiocore import WaveFile
 from audiomixer import Mixer
 from audiospeed import Resampler, SpeedChanger
 import audiotap
+import gc
 import synthio
 import os
 
-from detect import Detect, fftfreq_areas as fftfreq
 import programs
+from relic_audiodetect.frequency import calculate_frequency
+from relic_audiodetect.note import Note
 import relic_waveform
 from uchameleon import uChameleon
 
 # Constants
-BUFFER_SIZE = 256
+# Samples per update of the note detector. It finds notes from about A2 (110 Hz) up with 1024
+# samples, and from about B3 up with 512.
+BUFFER_SIZE = 1024
 
 DIR = "/samples"
+DEFAULT_ROOT = 440.0  # hz, used for samples without a detectable frequency
 
 MIN_SENSITIVITY = 0.75
 MAX_SENSITIVITY = 1.0
@@ -31,8 +36,9 @@ def valid_sample(filename: str) -> bool:
 SAMPLE_PATHS = tuple([DIR + "/" + x for x in sorted(list(filter(lambda x: valid_sample(x), os.listdir(DIR))))[:4]])
 
 def determine_root(path: str) -> float:
-    return fftfreq(*relic_waveform.from_wav(path, max_size=8192))
+    return calculate_frequency(*relic_waveform.from_wav(path, max_size=4096)) or DEFAULT_ROOT
 SAMPLE_ROOTS = tuple([determine_root(x) for x in SAMPLE_PATHS])
+gc.collect()  # the analysis grows the heap, give the memory back for the audio buffers
 
 SAMPLES = tuple([WaveFile(x) for x in SAMPLE_PATHS])
 
@@ -42,7 +48,7 @@ pedal = uChameleon(
 )
 
 # Setup frequency detector
-detect = Detect()
+detect = Note(BUFFER_SIZE, pedal.sample_rate)
 
 # Setup audio objects
 sampler = resampler = None  # will be SpeedChanger & Resampler when a sample is loaded
@@ -65,7 +71,7 @@ mixer.voice[1].play(tap.play(pedal.audio_in))
 
 # Assign sample
 sample_index = -1
-sample_root = 440
+sample_root = DEFAULT_ROOT
 def set_sample(index: int):
     global sample_index, sample_root, sampler, resampler
     if index != sample_index:
@@ -124,7 +130,7 @@ while True:
         elif tap.available >= BUFFER_SIZE:
             while tap.available >= BUFFER_SIZE:
                 tap.readinto(buffer)  # skip to the latest audio if the loop is behind
-            state = detect.update(buffer, pedal.sample_rate)
+            state = detect.update(buffer)
             if state is synthio.EnvelopeState.ATTACK:
                 press(detect.frequency)
             elif state is synthio.EnvelopeState.RELEASE:

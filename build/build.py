@@ -23,7 +23,6 @@ ASSET_DIRS = [
 SRC_FILES = [
     "boot.py",
     "code.py",
-    "detect.py",
     "settings.toml",
     "uchameleon.py"
 ]

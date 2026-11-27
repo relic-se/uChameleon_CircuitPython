@@ -1,5 +1,6 @@
 adafruit_debouncer
 adafruit_midi
+relic_audiodetect
 relic_tlv320aic3204
 relic_waveform
 synthtools

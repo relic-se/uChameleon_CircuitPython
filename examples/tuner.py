@@ -4,9 +4,8 @@
 
 import array
 import audiotap
-import synthio
 
-from detect import Detect
+from relic_audiodetect.note import Note
 from uchameleon import uChameleon
 
 # Constants
@@ -27,7 +26,7 @@ tap = audiotap.Tap(capacity=4 * BUFFER_SIZE / pedal.sample_rate)
 pedal.play(tap.play(pedal.audio_in))
 
 # Setup chromatic note detector
-detect = Detect()
+detect = Note(BUFFER_SIZE, pedal.sample_rate)
 
 buffer = array.array("h", [0] * BUFFER_SIZE)
 while True:
@@ -47,8 +46,8 @@ while True:
         elif tap.available >= BUFFER_SIZE:
             while tap.available >= BUFFER_SIZE:
                 tap.readinto(buffer)  # skip to the latest audio if the loop is behind
-            state = detect.update(buffer, pedal.sample_rate)
-            if detect.state in {synthio.EnvelopeState.ATTACK, synthio.EnvelopeState.SUSTAIN}:
+            detect.update(buffer)
+            if detect.active:
                 print(detect.notename, detect.cents)
     
     pedal.leds = (not pedal.bypass) / (1 + (not detect.active)) * detect.level

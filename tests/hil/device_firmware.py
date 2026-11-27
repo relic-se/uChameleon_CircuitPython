@@ -4,7 +4,7 @@
 
 # Device side of the hardware-in-the-loop checks of the installed firmware. This file is sent to
 # the REPL by run.py, it is not meant to be copied to the device. Unlike device_capture.py it uses
-# the uchameleon and detect modules that are on the device.
+# the uchameleon module and the libraries that are on the device.
 
 import array
 import binascii
@@ -51,7 +51,7 @@ def detect(cfg):
     """Play a tone through the DAC and run the note detection of the firmware on the input."""
     import audiotap
     from audiomixer import Mixer
-    from detect import Detect
+    from relic_audiodetect.note import Note
 
     device = pedal()
     size = cfg["buffer_size"]
@@ -71,7 +71,7 @@ def detect(cfg):
     time.sleep(0.5)
     tap.clear()
 
-    detector = Detect()
+    detector = Note(size, device.sample_rate)
     detector.sensitivity = cfg["sensitivity"]
     buffer = array.array("h", [0] * size)
     worst = 0
@@ -83,7 +83,7 @@ def detect(cfg):
         while tap.available >= size:
             tap.readinto(buffer)
         start = time.monotonic_ns()
-        detector.update(buffer, device.sample_rate)
+        detector.update(buffer)
         worst = max(worst, time.monotonic_ns() - start)
         updates += 1
     device._audio_out.stop()
