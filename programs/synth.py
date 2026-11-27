@@ -8,6 +8,7 @@ import array
 from audiomixer import Mixer
 import audiotap
 import synthio
+import ulab.numpy as np
 
 from relic_audiodetect.note import Note
 from synthtools import Patch, SubtractiveSynth
@@ -18,9 +19,14 @@ from uchameleon import uChameleon
 # Constants
 VELOCITY_LEVEL = 0.05
 
-# Samples per update of the note detector. It finds notes from about A2 (110 Hz) up with 1024
-# samples, and from about B3 up with 512.
-BUFFER_SIZE = 1024
+# The note is found in the last WINDOW_SIZE samples of the input, which sets the lowest note that
+# is found: A2 with 1024 samples. The detector is updated for every HOP_SIZE new samples, and
+# reports a note ATTACK_UPDATES updates after it starts, when the note fills most of the window.
+# The input arrives in pieces of the size of the buffer of the mixer, which is 512 samples, so a
+# smaller HOP_SIZE does not find a note sooner.
+WINDOW_SIZE = 1024
+HOP_SIZE = 512
+ATTACK_UPDATES = 2
 
 MIN_SENSITIVITY = 0.75
 MAX_SENSITIVITY = 1.0
@@ -120,7 +126,7 @@ pedal = uChameleon(
 )
 
 # Setup chromatic note detector
-detect = Note(BUFFER_SIZE, pedal.sample_rate)
+detect = Note(WINDOW_SIZE, pedal.sample_rate, attack_updates=ATTACK_UPDATES)
 
 # Setup audio objects
 mixer = Mixer(
@@ -143,7 +149,7 @@ pedal.play(
 
 # The input is played through a tap, which keeps a copy of it for the note detector. It is played
 # at a level of 0, so that it is not heard.
-tap = audiotap.Tap(capacity=4 * BUFFER_SIZE / pedal.sample_rate)
+tap = audiotap.Tap(capacity=8 * HOP_SIZE / pedal.sample_rate)
 mixer.voice[1].level = 0.0
 mixer.voice[1].play(tap.play(pedal.audio_in))
 
@@ -173,7 +179,13 @@ def note_on(notenum: int, velocity: float = 1.0) -> None:
         )
         active_notenum = notenum
 
-buffer = array.array("h", [0] * BUFFER_SIZE)
+# The window is kept in a ring of twice its size. Every sample is written to it twice,
+# WINDOW_SIZE apart, so that the last WINDOW_SIZE samples are always in one piece and in order,
+# starting at `position`. Nothing has to be moved or allocated to slide the window.
+ring = array.array("h", [0] * (2 * WINDOW_SIZE))
+ring_view = memoryview(ring)
+samples = np.frombuffer(ring, dtype=np.int16)
+position = 0
 while True:
     pedal.update()
     programs.update(pedal)
@@ -195,10 +207,14 @@ while True:
     if not pedal.bypass:
         if tap.overflow:
             tap.clear()  # the tap was not read in time, what it holds is old
-        elif tap.available >= BUFFER_SIZE:
-            while tap.available >= BUFFER_SIZE:
-                tap.readinto(buffer)  # skip to the latest audio if the loop is behind
-            state = detect.update(buffer)
+        elif tap.available >= HOP_SIZE:
+            while tap.available >= HOP_SIZE:  # all of it if the loop is behind
+                tap.readinto(ring_view[position : position + HOP_SIZE])
+                ring_view[position + WINDOW_SIZE : position + WINDOW_SIZE + HOP_SIZE] = ring_view[
+                    position : position + HOP_SIZE
+                ]
+                position = (position + HOP_SIZE) % WINDOW_SIZE
+            state = detect.update(samples[position : position + WINDOW_SIZE])
             # TODO: Control bend with sustain state
             if state is synthio.EnvelopeState.ATTACK:
                 note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))
