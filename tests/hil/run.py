@@ -188,10 +188,11 @@ def firmware(board: Board, lib: str | None = None) -> bool:
     board.run(code, timeout=60)
     passed = True
 
-    # Note detection: A4 played as 22 cycles in 2205 samples
+    # Note detection: A4 played as 44 cycles in 4410 samples. The length is even because the mixer
+    # that plays the tone drops the last sample of a loop with an odd length.
     config = {
-        "cycles": 22,
-        "length": 2205,
+        "cycles": 44,
+        "length": 4410,
         "amplitude": 0.5,
         "sensitivity": 0.9,
         "buffer_size": 2048,
