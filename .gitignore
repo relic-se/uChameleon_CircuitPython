@@ -2,3 +2,5 @@
 .vscode
 dist
 tests/hil/results
+__pycache__
+*.pyc
