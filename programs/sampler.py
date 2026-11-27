@@ -34,7 +34,7 @@ def valid_sample(filename: str) -> bool:
 SAMPLE_PATHS = tuple([DIR + "/" + x for x in sorted(list(filter(lambda x: valid_sample(x), os.listdir(DIR))))[:4]])
 
 def determine_root(path: str) -> float:
-    return calculate_frequency(*relic_waveform.from_wav(path, max_size=8192)) or DEFAULT_ROOT
+    return calculate_frequency(*relic_waveform.from_wav(path, max_size=4096)) or DEFAULT_ROOT
 SAMPLE_ROOTS = tuple([determine_root(x) for x in SAMPLE_PATHS])
 gc.collect()  # the analysis grows the heap, give the memory back for the audio buffers
 
