@@ -6,6 +6,7 @@
 
 import array
 from audiomixer import Mixer
+import audiotap
 import synthio
 
 from synthtools import Patch, SubtractiveSynth
@@ -120,8 +121,8 @@ pedal = uChameleon(
 detect = Detect()
 
 # Setup audio objects
-mixer = Mixer(  # used for buffer
-    voice_count=1,
+mixer = Mixer(
+    voice_count=2,  # the synthesizer and the input
     **pedal.audiosample_args,
 )
 
@@ -137,6 +138,12 @@ pedal.play(
         engine
     )
 )
+
+# The input is played through a tap, which keeps a copy of it for the note detector. It is played
+# at a level of 0, so that it is not heard.
+tap = audiotap.Tap(capacity=4 * BUFFER_SIZE / pedal.sample_rate)
+mixer.voice[1].level = 0.0
+mixer.voice[1].play(tap.play(pedal.audio_in))
 
 # Assign patch
 patch_index = None
@@ -184,10 +191,14 @@ while True:
             note_off()
 
     if not pedal.bypass:
-        pedal.audio_in.record(buffer, len(buffer))
-        state = detect.update(buffer, pedal.sample_rate)
-        # TODO: Control bend with sustain state
-        if state is synthio.EnvelopeState.ATTACK:
-            note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))
-        elif state is synthio.EnvelopeState.RELEASE:
-            note_off()
+        if tap.overflow:
+            tap.clear()  # the tap was not read in time, what it holds is old
+        elif tap.available >= BUFFER_SIZE:
+            while tap.available >= BUFFER_SIZE:
+                tap.readinto(buffer)  # skip to the latest audio if the loop is behind
+            state = detect.update(buffer, pedal.sample_rate)
+            # TODO: Control bend with sustain state
+            if state is synthio.EnvelopeState.ATTACK:
+                note_on(detect.notenum, min(detect.level / VELOCITY_LEVEL, 1.0))
+            elif state is synthio.EnvelopeState.RELEASE:
+                note_off()
