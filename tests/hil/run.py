@@ -61,30 +61,44 @@ class Board:
     """Runs code on a CircuitPython device through the raw REPL of its serial console."""
 
     def __init__(self, port: str) -> None:
-        self._serial = serial.Serial(port, 115200, timeout=1)
+        self._serial = serial.Serial(port, 115200, timeout=1, write_timeout=5)
+        self._pending = bytearray()
 
     def close(self) -> None:
         self._serial.close()
 
     def _read_until(self, ending: bytes, timeout: float) -> bytes:
-        data = bytearray()
+        """Read up to and including `ending`, keeping anything after it for the next read."""
         deadline = time.monotonic() + timeout
-        while not data.endswith(ending):
+        while ending not in self._pending:
             if time.monotonic() > deadline:
-                raise TimeoutError(f"No {ending!r} from device, received {bytes(data[-200:])!r}")
-            data += self._serial.read(max(self._serial.in_waiting, 1))
-        return bytes(data)
+                received = bytes(self._pending[-200:])
+                raise TimeoutError(f"No {ending!r} from device, received {received!r}")
+            self._pending += self._serial.read(max(self._serial.in_waiting, 1))
+        end = self._pending.index(ending) + len(ending)
+        data = bytes(self._pending[:end])
+        del self._pending[:end]
+        return data
 
     def enter_raw_repl(self) -> None:
-        self._serial.write(b"\r\x03")  # stop the running program
-        time.sleep(0.1)
-        self._serial.write(b"\x03")
-        time.sleep(0.5)
-        self._serial.write(b"\r")  # "press any key to enter the REPL"
-        time.sleep(0.3)
-        self._serial.reset_input_buffer()
-        self._serial.write(b"\x01")
-        self._read_until(b"raw REPL; CTRL-B to exit\r\n>", 5)
+        for attempt in range(3):
+            self._serial.write(b"\r\x03")  # stop the running program
+            time.sleep(0.1)
+            self._serial.write(b"\x03")
+            time.sleep(0.5)
+            self._serial.write(b"\x02")  # leave a raw REPL that was left open
+            time.sleep(0.3)
+            self._serial.write(b"\r")  # "press any key to enter the REPL"
+            time.sleep(0.3)
+            self._serial.reset_input_buffer()
+            self._pending.clear()
+            self._serial.write(b"\x01")
+            try:
+                self._read_until(b"raw REPL; CTRL-B to exit\r\n>", 3)
+                return
+            except TimeoutError:
+                if attempt == 2:
+                    raise
 
     def exit_raw_repl(self, reload: bool = False) -> None:
         self._serial.write(b"\x02")
@@ -98,8 +112,7 @@ class Board:
             self._serial.write(data[start : start + 256])
             time.sleep(0.01)
         self._serial.write(b"\x04")
-        if self._read_until(b"OK", 5)[-2:] != b"OK":
-            raise RuntimeError("Device did not accept the code")
+        self._read_until(b"OK", 5)
         output = self._read_until(b"\x04", timeout)[:-1]
         error = self._read_until(b"\x04", timeout)[:-1]
         self._read_until(b">", 5)
@@ -166,6 +179,11 @@ def measure(board: Board, clock: str, signal: str, args: argparse.Namespace) -> 
     config["label"] = f"{clock}/{signal}"
     config["lib_path"] = args.lib
     config["passthrough_db"] = args.passthrough
+    for override in args.set:
+        key, _, value = override.partition("=")
+        if key not in config:
+            sys.exit(f"Unknown setting: {key}")
+        config[key] = json.loads(value)
     config["capture_samples"] = int(args.seconds * config["sample_rate"])
 
     meta, samples = capture(board, config)
@@ -199,6 +217,13 @@ def main() -> None:
     run.add_argument("--passthrough", type=float, help="enable the dry passthrough at this dB")
     run.add_argument("--output", type=Path, help="write the results to this JSON file")
     run.add_argument("--raw", help="folder to save the raw recordings in")
+    run.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a setting of the device script, for example sample_rate=48000",
+    )
 
     commands.add_parser("resume", help="restart the program on the device")
 

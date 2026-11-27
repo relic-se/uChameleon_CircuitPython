@@ -141,7 +141,7 @@ def run(cfg):
 
         count = cfg["capture_samples"]
         gc.collect()
-        recording = array.array("h", bytes(count * 2))
+        recording = array.array("h", (0,)) * count
         recorded = audio_in.record(recording, count)
 
         bypass.value = False
