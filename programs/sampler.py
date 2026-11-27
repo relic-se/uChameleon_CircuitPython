@@ -35,10 +35,6 @@ SAMPLE_ROOTS = tuple([determine_root(x) for x in SAMPLE_PATHS])
 
 SAMPLES = tuple([WaveFile(x) for x in SAMPLE_PATHS])
 
-# Overclock
-import microcontroller
-microcontroller.cpu.frequency = 300_000_000
-
 # Initialize Hardware
 pedal = uChameleon(
     mix=1.0,
