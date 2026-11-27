@@ -332,7 +332,7 @@ class uChameleon:
         return supervisor.runtime.usb_connected and usb_microphone is not None
 
     @property
-    def stemma(self) -> I2C|None:
+    def stemma(self) -> "I2C|None":
         return self._stemma
 
     def get_midi_messages(self) -> Tuple[Optional[MIDIMessage]]:
