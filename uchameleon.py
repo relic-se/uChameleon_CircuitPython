@@ -10,6 +10,7 @@ import board
 from busio import I2C, UART
 import math
 import digitalio
+import microcontroller
 from pwmio import PWMOut
 import supervisor
 import time
@@ -68,6 +69,15 @@ _PIN_ADC0 = board.GP26
 _PIN_ADC1 = board.GP27
 _PIN_ADC2 = board.GP28
 
+# The system clock is chosen so that the I2S bus and the main clock of the codec are both exact
+# integer divisions of it at a sample rate of 44.1 kHz (12 MHz * 127 / 5):
+#   Frame rate = 304.8 MHz / (36 * 192 PIO cycles per frame) = 44097.2 Hz
+#   MCLK       = 304.8 MHz / 27                              = 11.2889 MHz = 256 * frame rate
+_CPU_FREQUENCY = 304_800_000
+_SYNC_SAMPLE_RATE = 44100
+_MCLK_DIVIDER = 27
+_MCLK_MULTIPLIER = 256
+
 class uChameleon:
 
     def __init__(
@@ -84,6 +94,12 @@ class uChameleon:
         self._sample_rate = sample_rate if sample_rate is not None else int(supervisor.get_setting("SAMPLE_RATE", 44100))
         self._mono = mono if mono is not None else bool(supervisor.get_setting("MONO", True))
         self._pot_count = pot_count
+
+        # Overclock before any clock dependent peripherals are created
+        try:
+            microcontroller.cpu.frequency = _CPU_FREQUENCY
+        except (ValueError, NotImplementedError):
+            pass
 
         # Setup MIDI
         self._uart = UART(
@@ -107,7 +123,7 @@ class uChameleon:
 
         # Setup STEMMA QT
         try:
-            self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA),
+            self._stemma = I2C(_PIN_STEMMA_SCL, _PIN_STEMMA_SDA)
         except RuntimeError:
             self._stemma = None
 
@@ -154,14 +170,34 @@ class uChameleon:
             mono=self._mono,
         )
 
-        # Configure Codec
-        self._codec = TLV320AIC3204(
-            i2c=I2C(_PIN_SCL, _PIN_SDA),
-            mclk=_PIN_MCLK,
-            rst=_PIN_RST,
-            sample_rate=self._sample_rate,
-        )
-        
+        if (
+            self._sample_rate == _SYNC_SAMPLE_RATE
+            and microcontroller.cpu.frequency == _CPU_FREQUENCY
+        ):
+            # Drive the codec directly from a main clock that is an exact multiple of the frame
+            # rate of the I2S bus, which avoids the jitter of the codec's PLL.
+            self._pin_mclk = None
+            self._codec = TLV320AIC3204(
+                i2c=I2C(_PIN_SCL, _PIN_SDA, frequency=400_000),
+                mclk=_PIN_MCLK,
+                rst=_PIN_RST,
+                sample_rate=self._sample_rate,
+                mclk_frequency=_CPU_FREQUENCY // _MCLK_DIVIDER,
+                mclk_multiplier=_MCLK_MULTIPLIER,
+            )
+        else:
+            # Hold the unused main clock input of the codec low
+            self._pin_mclk = digitalio.DigitalInOut(_PIN_MCLK)
+            self._pin_mclk.switch_to_output(False)
+
+            # Without a main clock, the codec generates its clocks from BCLK which keeps it
+            # synchronized with the I2S bus.
+            self._codec = TLV320AIC3204(
+                i2c=I2C(_PIN_SCL, _PIN_SDA, frequency=400_000),
+                rst=_PIN_RST,
+                sample_rate=self._sample_rate,
+            )
+
         if not self.usb_connected:
             self._audio_out = I2SOut(
                 bit_clock=_PIN_BCLK,

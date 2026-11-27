@@ -16,10 +16,6 @@ PITCH_MIX = 0.5  # 0.0 to 1.0
 
 BUFFER_SIZE     = 2048  # bytes
 
-# Overclock
-import microcontroller
-microcontroller.cpu.frequency = 300_000_000
-
 # Initialize Hardware
 pedal = uChameleon()
 
