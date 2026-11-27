@@ -14,7 +14,9 @@ FILTER_FREQ = 3000  # hz
 
 PITCH_MIX = 0.5  # 0.0 to 1.0
 
-BUFFER_SIZE     = 2048  # bytes
+# The I2S input only holds 40 ms of audio and drops it all when it overflows. Every effect reads a
+# whole buffer at once, so smaller buffers leave more room for the main loop to be late.
+BUFFER_SIZE     = 1024  # bytes
 
 # Initialize Hardware
 pedal = uChameleon()
@@ -27,7 +29,7 @@ effect_pitch = GranularPitchShift(
     grain_size=2048,
     density=8,
     spread=1.0,
-    buffer_size=2048,
+    buffer_size=BUFFER_SIZE,
     
     **pedal.audiosample_args,
 )
