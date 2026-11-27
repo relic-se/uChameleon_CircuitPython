@@ -27,6 +27,20 @@ python tests/hil/run.py upload ../CircuitPython_TLV320AIC3204/relic_tlv320aic320
 python tests/hil/run.py run mclk-304.8 --lib /hil
 ```
 
+## Firmware checks
+
+```
+python tests/hil/run.py firmware
+```
+
+Checks the firmware that is installed on the device and exits with an error if a check fails:
+
+- Note detection reports A4 for a 440 Hz tone.
+- The distortion chain does not turn a DC offset at the input into even harmonics.
+
+Use `--lib /folder` to load modules from another folder on the device first, for example to check a
+changed `detect.py` before installing it.
+
 ## Clock configurations
 
 | Name | Codec clock source | System clock |

@@ -85,3 +85,35 @@ def analyze_silence(samples: np.ndarray) -> dict:
         "noise_dbfs": round(_db(np.sqrt(np.mean((x - dc) ** 2))), 2),
         "dc_dbfs": round(_db(abs(dc)), 2),
     }
+
+
+def analyze_harmonics(samples: np.ndarray, cycles: int, length: int) -> dict:
+    """Split a recording of a distorted tone into its harmonics and everything else.
+
+    The tone must have been played as a loop of `cycles` cycles in `length` samples. Anything that
+    is not a harmonic of it is aliasing or noise.
+    """
+    x = samples.astype(np.float64) / 32768
+    count = (len(x) // length) * length
+    x = x[:count] - np.mean(x[:count])
+    power = (np.abs(np.fft.rfft(x)) / (count / 2)) ** 2 / 2
+    step = cycles * count // length
+
+    def harmonic(number: int) -> float:
+        return float(np.sum(power[number * step - 1 : number * step + 2]))
+
+    numbers = range(2, (len(power) - 2) // step + 1)
+    fundamental = harmonic(1)
+    harmonics = sum(harmonic(n) for n in numbers)
+    even = sum(harmonic(n) for n in numbers if n % 2 == 0)
+    other = float(np.sum(power[3:])) - fundamental - harmonics
+
+    def relative(value: float) -> float:
+        return round(float(10 * np.log10(max(value, 1e-15) / fundamental)), 1)
+
+    return {
+        "level_dbfs": round(float(10 * np.log10(max(float(np.sum(power)), 1e-15))), 1),
+        "harmonics_dbc": relative(harmonics),
+        "even_harmonics_dbc": relative(even),
+        "non_harmonic_dbc": relative(other),
+    }
