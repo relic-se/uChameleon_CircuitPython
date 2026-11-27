@@ -20,7 +20,9 @@ import relic_waveform
 from uchameleon import uChameleon
 
 # Constants
-BUFFER_SIZE = 512
+# Samples per update of the note detector. It finds notes from about A2 (110 Hz) up with 1024
+# samples, and from about B3 up with 512.
+BUFFER_SIZE = 1024
 
 DIR = "/samples"
 DEFAULT_ROOT = 440.0  # hz, used for samples without a detectable frequency
