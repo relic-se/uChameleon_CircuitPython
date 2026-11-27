@@ -41,6 +41,21 @@ Checks the firmware that is installed on the device and exits with an error if a
 Use `--lib /folder` to load modules from another folder on the device first, for example to check a
 changed `detect.py` before installing it.
 
+## Program checks
+
+```
+python tests/hil/run.py programs
+```
+
+Runs the programs of this repository that listen to the input (`level`, `tuner`, `synth` and
+`sampler`) on the device, without installing them, and plays three tones to their input. Name the
+programs to run only some of them. The modules and libraries are the ones on the device, so
+`--lib /folder` is needed for changes outside of the program itself.
+
+A program is played at a level of 0, so that it only hears the tones through the patch cable. What
+it does is read from its global names: the note that the tuner shows, the note that the synth plays
+and the frequency that the sampler plays at.
+
 ## Clock configurations
 
 | Name | Codec clock source | System clock |

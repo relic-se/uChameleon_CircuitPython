@@ -12,6 +12,7 @@ recording on this computer. See README.md for details.
 import argparse
 import base64
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -54,6 +55,55 @@ SIGNALS = {
     "tone3k": {"tone_cycles": 30},
     "tone1k": {"tone_cycles": 10},
     "silence": {"amplitude": 0.0},
+}
+
+# Tones that are played to the programs, as cycles in 4410 samples at 44.1 kHz
+PROGRAM_TONES = (
+    {"cycles": 44, "frequency": 440.0, "name": "A4", "midi": 69},
+    {"cycles": 88, "frequency": 880.0, "name": "A5", "midi": 81},
+    {"cycles": 66, "frequency": 660.0, "name": "E5", "midi": 76},
+)
+PROGRAM_TONE_SECONDS = 0.6
+PROGRAM_SILENCE_SECONDS = 0.5
+
+# Programs that listen to the input. `watch` is evaluated with the global names of the program.
+# Its value is compared with a tone at the start of the tone ("attack") or at its end ("held"),
+# and it must be None or False again in the silence after the tone.
+PROGRAMS = {
+    "level": {
+        "path": "examples/level.py",
+        "pots": (0.0, 0.0, 0.0),
+        "watch": "pedal.leds[0] > 0.1",
+        "when": "held",
+        "expected": lambda value, tone: value is True,
+        "describe": lambda tone: "LEDs lit",
+    },
+    "tuner": {
+        "path": "examples/tuner.py",
+        "pots": (0.37, 0.0, 0.0),  # sensitivity of 0.9
+        "watch": "detect.notename if detect.active else None",
+        "when": "held",
+        "expected": lambda value, tone: value == tone["name"],
+        "describe": lambda tone: tone["name"],
+    },
+    "synth": {
+        "path": "programs/synth.py",
+        "pots": (1.0, 0.37, 1.0),  # mix, sensitivity of 0.9, level
+        "watch": "active_notenum",
+        "when": "attack",
+        "expected": lambda value, tone: value == tone["midi"],
+        "describe": lambda tone: f"MIDI note {tone['midi']}",
+    },
+    "sampler": {
+        "path": "programs/sampler.py",
+        "pots": (1.0, 0.37, 1.0),  # mix, sensitivity of 0.9, level
+        "watch": "sampler.rate * sample_root if pressed else None",
+        "when": "attack",
+        "expected": lambda value, tone: (
+            isinstance(value, float) and abs(1200 * math.log2(value / tone["frequency"])) < 100
+        ),
+        "describe": lambda tone: f"{tone['frequency']:.0f} Hz within a semitone",
+    },
 }
 
 
@@ -237,6 +287,86 @@ def firmware(board: Board, lib: str | None = None) -> bool:
     return passed
 
 
+def value_at(log: list, seconds: float):
+    """The watched value of a program at a time."""
+    value = None
+    for time_, _, logged in log:
+        if time_ <= seconds:
+            value = logged
+    return value
+
+
+def check_programs(board: Board, names: list, lib: str | None = None) -> bool:
+    """Run programs from this repository on the device and check how they react to tones."""
+    code = (HERE / "device_programs.py").read_text()
+    if lib:
+        code = f"import sys{chr(10)}sys.path.insert(0, {lib!r}){chr(10)}" + code
+
+    schedule = []
+    seconds = PROGRAM_SILENCE_SECONDS
+    for tone in PROGRAM_TONES:
+        schedule.append([seconds, tone["cycles"]])
+        seconds += PROGRAM_TONE_SECONDS
+        schedule.append([seconds, None])
+        seconds += PROGRAM_SILENCE_SECONDS
+
+    passed = True
+    for name in names:
+        program = PROGRAMS[name]
+        source = (HERE.parent.parent / program["path"]).read_text(encoding="utf-8")
+        config = {
+            "name": name,
+            "sample_rate": 44100,
+            "length": 4410,
+            "amplitude": 0.5,
+            "schedule": schedule,
+            "duration": seconds,
+            "pots": program["pots"],
+            "watch": [["value", program["watch"]]],
+        }
+        # Each program gets a new interpreter, as it does when the pedal starts it
+        board.exit_raw_repl()
+        board.enter_raw_repl()
+        board.run(code, timeout=60)
+        board.run(f"SOURCE = {source!r}{chr(10)}")
+        result, _ = parse(board.run(f"run_program(SOURCE, {config!r}){chr(10)}", timeout=120))
+        board.run("finish()\n")
+        if result["error"]:
+            passed &= check(f"{name} runs", False, result["error"])
+            continue
+
+        log = result["log"]
+        for index, tone in enumerate(PROGRAM_TONES):
+            start, stop = schedule[2 * index][0], schedule[2 * index + 1][0]
+            if program["when"] == "attack":
+                # The first value after the tone started
+                values = [v for t, _, v in log if start <= t < stop and v not in (None, False)]
+                value = values[0] if values else None
+                moment = "at the start of the tone"
+            else:
+                value = value_at(log, stop)
+                moment = "at the end of the tone"
+            shown = f"{value:.1f}" if isinstance(value, float) else repr(value)
+            passed &= check(
+                f"{name} {tone['name']}",
+                program["expected"](value, tone),
+                f"{shown} {moment}, expected {program['describe'](tone)}",
+            )
+        silent = all(
+            value_at(log, entry[0] + PROGRAM_SILENCE_SECONDS - 0.05) in (None, False)
+            for entry in schedule
+            if entry[1] is None
+        )
+        passed &= check(f"{name} between the tones", silent, "released" if silent else "still active")
+        overflow = result["input_overflow"] or result["tap_overflow"]
+        print(
+            f"INFO  {name}: {result['loop_ms']:.1f} ms per loop, {result['worst_loop_ms']:.1f} ms at"
+            f" worst, input {'dropped audio' if overflow else 'not dropped'}"
+        )
+
+    return passed
+
+
 def measure(board: Board, clock: str, signal: str, args: argparse.Namespace) -> dict:
     config = dict(DEFAULTS)
     config.update(CLOCKS[clock])
@@ -294,6 +424,11 @@ def main() -> None:
         "firmware", help="check the firmware that is installed on the device"
     )
     check_firmware.add_argument("--lib", help="folder on the device to load modules from first")
+    check_programs_ = commands.add_parser(
+        "programs", help="run programs from this repository on the device and check them"
+    )
+    check_programs_.add_argument("names", nargs="*", choices=[[], *sorted(PROGRAMS)])
+    check_programs_.add_argument("--lib", help="folder on the device to load modules from first")
     commands.add_parser("resume", help="restart the program on the device")
 
     args = parser.parse_args()
@@ -307,6 +442,11 @@ def main() -> None:
             board.exit_raw_repl(reload=True)
         elif args.command == "firmware":
             passed = firmware(board, args.lib)
+            board.exit_raw_repl()
+            if not passed:
+                sys.exit(1)
+        elif args.command == "programs":
+            passed = check_programs(board, args.names or sorted(PROGRAMS), args.lib)
             board.exit_raw_repl()
             if not passed:
                 sys.exit(1)
