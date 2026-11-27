@@ -31,3 +31,8 @@ jobs:
       shell: bash
       run: |
         python build/build.py
+    - name: Run tests
+      shell: bash
+      run: |
+        pip install pytest
+        pytest tests
