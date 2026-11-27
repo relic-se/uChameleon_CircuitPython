@@ -20,7 +20,7 @@ import numpy as np
 import serial
 from serial.tools import list_ports
 
-from analysis import analyze_silence, analyze_tone
+from analysis import analyze_harmonics, analyze_silence, analyze_tone
 
 HERE = Path(__file__).parent
 USB_VENDORS = (0x239A, 0x2E8A)  # Adafruit, Raspberry Pi
@@ -151,9 +151,7 @@ def find_port(port: str | None) -> str:
     return ports[0].device
 
 
-def capture(board: Board, config: dict) -> tuple[dict, np.ndarray]:
-    code = (HERE / "device_capture.py").read_text() + f"\nrun({config!r})\n"
-    output = board.run(code, timeout=120)
+def parse(output: str) -> tuple[dict, np.ndarray]:
     meta = None
     encoded = []
     in_data = False
@@ -170,6 +168,73 @@ def capture(board: Board, config: dict) -> tuple[dict, np.ndarray]:
         raise RuntimeError(f"No result from device:\n{output}")
     samples = np.frombuffer(base64.b64decode("".join(encoded)), dtype="<i2")
     return meta, samples
+
+
+def capture(board: Board, config: dict) -> tuple[dict, np.ndarray]:
+    code = (HERE / "device_capture.py").read_text() + f"\nrun({config!r})\n"
+    return parse(board.run(code, timeout=120))
+
+
+def check(name: str, passed: bool, detail: str) -> bool:
+    print(f"{'PASS' if passed else 'FAIL'}  {name}: {detail}")
+    return passed
+
+
+def firmware(board: Board, lib: str | None = None) -> bool:
+    """Checks of the firmware that is installed on the device."""
+    code = (HERE / "device_firmware.py").read_text()
+    if lib:
+        code = f"import sys{chr(10)}sys.path.insert(0, {lib!r}){chr(10)}" + code
+    board.run(code, timeout=60)
+    passed = True
+
+    # Note detection: A4 played as 22 cycles in 2205 samples
+    config = {
+        "cycles": 22,
+        "length": 2205,
+        "amplitude": 0.5,
+        "sensitivity": 0.9,
+        "buffer_size": 2048,
+        "updates": 12,
+    }
+    result, _ = parse(board.run(f"detect({config!r})\n", timeout=60))
+    frequency = result["frequency"] or 0.0
+    passed &= check("detect is active", result["active"], f"level {result['level']:.2f}")
+    passed &= check("detect note", result["notename"] == "A4", f"{result['notename']!r}, expected 'A4'")
+    passed &= check(
+        "detect frequency",
+        abs(frequency - 440.0) < 44100 / 1024,
+        f"{frequency:.1f} Hz, expected 440 Hz within one bin ({result['update_ms']:.1f} ms per update)",
+    )
+
+    # Distortion with boost: a DC offset at the input must not add even harmonics
+    config = {
+        "cycles": 10,
+        "length": 441,
+        "amplitude": 0.1,
+        "offset": 100,
+        "input_filter": 40,
+        "mode": "CLIP",
+        "pre_gain": 24,
+        "drive": 0.5,
+        "output_filter": 12000,
+        "capture_samples": 44100,
+    }
+    for input_filter in (0, 40):
+        config["input_filter"] = input_filter
+        _, samples = parse(board.run(f"distortion({config!r})\n", timeout=90))
+        result = analyze_harmonics(samples[4410:], config["cycles"], config["length"])
+        detail = (
+            f"even harmonics {result['even_harmonics_dbc']} dBc,"
+            f" aliasing and noise {result['non_harmonic_dbc']} dBc"
+        )
+        if input_filter:
+            passed &= check("distortion with input filter", result["even_harmonics_dbc"] < -55, detail)
+        else:
+            print(f"INFO  distortion without input filter: {detail}")
+
+    board.run("finish()\n")
+    return passed
 
 
 def measure(board: Board, clock: str, signal: str, args: argparse.Namespace) -> dict:
@@ -225,6 +290,10 @@ def main() -> None:
         help="override a setting of the device script, for example sample_rate=48000",
     )
 
+    check_firmware = commands.add_parser(
+        "firmware", help="check the firmware that is installed on the device"
+    )
+    check_firmware.add_argument("--lib", help="folder on the device to load modules from first")
     commands.add_parser("resume", help="restart the program on the device")
 
     args = parser.parse_args()
@@ -236,6 +305,11 @@ def main() -> None:
             board.exit_raw_repl()
         elif args.command == "resume":
             board.exit_raw_repl(reload=True)
+        elif args.command == "firmware":
+            passed = firmware(board, args.lib)
+            board.exit_raw_repl()
+            if not passed:
+                sys.exit(1)
         else:
             results = []
             for clock in args.clocks:
