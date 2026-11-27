@@ -57,8 +57,11 @@ def detect(cfg):
     size = cfg["buffer_size"]
     samples = _tone(cfg["cycles"], cfg["length"], cfg["amplitude"])
 
-    # The input is read through a tap that is played at a level of 0, as in the programs
-    mixer = Mixer(voice_count=2, **device.audiosample_args)
+    # The input is read through a tap that is played at a level of 0, as in the programs. The
+    # buffer of the mixer is larger than the default, because the output repeats a buffer when
+    # the detection keeps the processor busy for longer than a buffer lasts, and the tone would
+    # be recorded with a jump in it.
+    mixer = Mixer(voice_count=2, buffer_size=2048, **device.audiosample_args)
     tap = audiotap.Tap(capacity=4 * size / device.sample_rate)
     device._audio_out.play(mixer)
     mixer.voice[0].play(RawSample(samples, sample_rate=device.sample_rate), loop=True)
