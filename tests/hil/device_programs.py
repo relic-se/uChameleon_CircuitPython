@@ -75,8 +75,10 @@ def run_program(source, cfg):
                     _tone(cycles, cfg["length"], cfg["amplitude"]), sample_rate=cfg["sample_rate"]
                 )
 
-        # The tones are mixed with what the program plays
-        mixer = Mixer(voice_count=2, **_pedal.audiosample_args)
+        # The tones are mixed with what the program plays. The buffer is larger than the default,
+        # because the output repeats a buffer when a program keeps the processor busy for longer
+        # than a buffer lasts, and the program would hear a tone with a jump in it.
+        mixer = Mixer(voice_count=2, buffer_size=2048, **_pedal.audiosample_args)
         _pedal._audio_out.play(mixer)
         mixer.voice[0].level = 0.0  # the program is not heard
         state["mixer"] = mixer
