@@ -8,6 +8,7 @@ import array
 from audiocore import WaveFile
 from audiomixer import Mixer
 from audiospeed import Resampler, SpeedChanger
+import audiotap
 import synthio
 import os
 
@@ -46,8 +47,8 @@ detect = Detect()
 # Setup audio objects
 sampler = resampler = None  # will be SpeedChanger & Resampler when a sample is loaded
 
-mixer = Mixer(  # used for buffer
-    voice_count=1,
+mixer = Mixer(
+    voice_count=2,  # the sample and the input
     **pedal.audiosample_args,
 )
 
@@ -55,6 +56,12 @@ mixer = Mixer(  # used for buffer
 pedal.play(
     mixer
 )
+
+# The input is played through a tap, which keeps a copy of it for the frequency detector. It is
+# played at a level of 0, so that it is not heard.
+tap = audiotap.Tap(capacity=4 * BUFFER_SIZE / pedal.sample_rate)
+mixer.voice[1].level = 0.0
+mixer.voice[1].play(tap.play(pedal.audio_in))
 
 # Assign sample
 sample_index = -1
@@ -65,7 +72,7 @@ def set_sample(index: int):
         sample_index = index % len(SAMPLES)
         sample_root = SAMPLE_ROOTS[sample_index]
 
-        if mixer.playing:
+        if mixer.voice[0].playing:
             mixer.stop_voice()
 
         if sampler is not None:
@@ -82,7 +89,7 @@ set_sample(0)
 pressed = False
 def release() -> None:
     global pressed
-    if pressed and mixer.playing:
+    if pressed and mixer.voice[0].playing:
         mixer.stop_voice()
     pressed = False
 def press(frequency: float) -> None:
@@ -112,9 +119,13 @@ while True:
             release()
 
     if not pedal.bypass:
-        pedal.audio_in.record(buffer, len(buffer))
-        state = detect.update(buffer, pedal.sample_rate)
-        if state is synthio.EnvelopeState.ATTACK:
-            press(detect.frequency)
-        elif state is synthio.EnvelopeState.RELEASE:
-            release()
+        if tap.overflow:
+            tap.clear()  # the tap was not read in time, what it holds is old
+        elif tap.available >= BUFFER_SIZE:
+            while tap.available >= BUFFER_SIZE:
+                tap.readinto(buffer)  # skip to the latest audio if the loop is behind
+            state = detect.update(buffer, pedal.sample_rate)
+            if state is synthio.EnvelopeState.ATTACK:
+                press(detect.frequency)
+            elif state is synthio.EnvelopeState.RELEASE:
+                release()
