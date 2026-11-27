@@ -18,7 +18,9 @@ from uchameleon import uChameleon
 # Constants
 VELOCITY_LEVEL = 0.05
 
-BUFFER_SIZE = 512
+# Samples per update of the note detector. It finds notes from about A2 (110 Hz) up with 1024
+# samples, and from about B3 up with 512.
+BUFFER_SIZE = 1024
 
 MIN_SENSITIVITY = 0.75
 MAX_SENSITIVITY = 1.0
